@@ -93,14 +93,24 @@
       diseaseVolume: "",
       priorArpi: "",
       priorDocetaxel: "",
+      hrrGene: "",
       fgfr3Status: "",
+      fgfrAlteration: "",
       her2Status: "",
       biomarkerHrr: "",
       biomarkerLabel: "",
       psmaStatus: "",
+      psmaPetPattern: "",
+      prostateVolumeClass: "",
+      prostateHistology: "",
+      taxaneExposure: "",
       genomicClassifier: "",
       genomicClassifierLabel: "",
       adtStatus: "",
+      bcgAdequacy: "",
+      bcgTimingPattern: "",
+      platinumStatus: "",
+      perioperativeStatus: "",
       histology: "",
       imdcRisk: "",
       priorSystemicLines: "",
@@ -117,6 +127,9 @@
       priorHdct: "",
       rplndStatus: "",
       markerStatus: "",
+      gctResidualMassSizeCm: "",
+      gctMarkerTrend: "",
+      gctSalvageLine: "",
       stage1RiskFactors: ""
     };
   }
@@ -262,8 +275,8 @@
   }
 
   function detectHrrState(text) {
-    if (/brca\s*1?\s*2?\s*\+|brca1\+|brca2\+|hrr positive|atm (mutation|mutated)|cdk12 (mutation|mutated)|hrr mutation|hrr deficient/i.test(text)) {
-      const match = text.match(/brca1\+|brca2\+|brca\+|atm(?: mutation| mutated)?|cdk12(?: mutation| mutated)?/i);
+    if (/(?:brca\s*[12]?|brca1|brca2|atm|cdk12|palb2|chek2)\s*(?:\+|positive|mutation|mutated|altered)|hrr positive|hrr mutation|hrr deficient/i.test(text)) {
+      const match = text.match(/brca\s*1|brca\s*2|brca1\+?|brca2\+?|brca\+|atm(?: mutation| mutated)?|cdk12(?: mutation| mutated)?|palb2(?: mutation| mutated)?|chek2(?: mutation| mutated)?/i);
       return {
         value: "positive",
         label: match ? normalizeWhitespace(match[0]).replace(/\bmutation\b/i, "").trim() : "HRR+"
@@ -277,6 +290,18 @@
     return { value: "", label: "" };
   }
 
+  function detectHrrGene(text) {
+    if (/brca\s*2|brca2/i.test(text)) return "brca2";
+    if (/brca\s*1|brca1/i.test(text)) return "brca1";
+    if (/\batm\b/i.test(text)) return "atm";
+    if (/\bcdk12\b/i.test(text)) return "cdk12";
+    if (/\bpalb2\b/i.test(text)) return "palb2";
+    if (/\bchek2\b/i.test(text)) return "chek2";
+    if (/\bbrca\b/i.test(text)) return "brca_unspecified";
+    if (/\bhrr\b|homologous recombination/i.test(text)) return "other_hrr";
+    return "";
+  }
+
   function detectPsmaState(text) {
     if (/psma[^.]{0,24}(confirmed|positive|avid)|psma[- ]avid|psma positive/i.test(text)) {
       return "positive";
@@ -286,6 +311,19 @@
       return "negative";
     }
 
+    return "";
+  }
+
+  function detectPsmaPetPattern(text) {
+    if (/dominant[^.;,\n]{0,30}psma[- ]negative|psma[- ]negative[^.;,\n]{0,30}dominant|discordant[^.;,\n]{0,30}(fdg|psma)/i.test(text)) {
+      return "dominant_psma_negative_lesion";
+    }
+    if (/psma[^.]{0,24}(confirmed|positive|avid)|psma[- ]avid|psma positive/i.test(text)) {
+      return "positive";
+    }
+    if (/psma negative/i.test(text)) {
+      return "negative";
+    }
     return "";
   }
 
@@ -339,6 +377,69 @@
       return "high_volume";
     }
 
+    return "";
+  }
+
+  function detectProstateVolumeClass(text) {
+    if (/oligometastatic|oligo[- ]metastatic/i.test(text)) {
+      return "oligometastatic";
+    }
+
+    if (/low[- ]volume|low[- ]burden/i.test(text)) {
+      return "low_volume";
+    }
+
+    if (/high[- ]volume|high[- ]burden|visceral[^.;,\n]{0,24}(met|mets|metastases)|(?:lung|liver)[^.;,\n]{0,24}(met|mets|metastases)/i.test(text)) {
+      return "high_volume_chaarted";
+    }
+
+    const boneMatch = text.match(/(\d+)\s+(?:bone mets?|bone metastases|bone lesions?)/i);
+    if (boneMatch) {
+      const count = Number(boneMatch[1]);
+      if (Number.isFinite(count)) {
+        if (count <= 3 && /no visceral|without visceral/i.test(text)) {
+          return "low_volume";
+        }
+        if (count >= 4 && /(rib|skull|humerus|femur|long bone|appendicular|outside (?:spine|vertebral|pelvis)|beyond (?:spine|vertebral|pelvis))/i.test(text)) {
+          return "high_volume_chaarted";
+        }
+        if (count >= 4) {
+          return "possible_high_volume";
+        }
+      }
+    }
+
+    return "";
+  }
+
+  function detectProstateHistology(text) {
+    if (/small[- ]cell/i.test(text)) return "small_cell";
+    if (/neuroendocrine|\bnepc\b/i.test(text)) return "neuroendocrine";
+    if (/aggressive[- ]variant|anaplastic/i.test(text)) return "aggressive_variant";
+    if (/mixed[^.;,\n]{0,24}(adenocarcinoma|small[- ]cell|neuroendocrine)/i.test(text)) return "mixed";
+    if (/adenocarcinoma/i.test(text)) return "adenocarcinoma";
+    return "";
+  }
+
+  function detectTaxaneExposure(text) {
+    if (/no prior (docetaxel|taxane|chemo|chemotherapy)|taxane[- ]naive|docetaxel[- ]naive|chemo[- ]naive|chemotherapy[- ]naive/i.test(text)) {
+      return "none";
+    }
+    if (/cabazitaxel/i.test(text)) {
+      return "cabazitaxel";
+    }
+    if (/\bmcrpc\b|metastatic castration[- ]resistant/i.test(text) && /progress(?:ed|ion)?\s+(?:on|after|following)[^.;,\n]{0,40}docetaxel/i.test(text)) {
+      return "docetaxel_mcrpc";
+    }
+    if (/docetaxel[^.;,\n]{0,40}(mcrpc|castration[- ]resistant)|mcrpc[^.;,\n]{0,40}docetaxel/i.test(text)) {
+      return "docetaxel_mcrpc";
+    }
+    if (/docetaxel[^.;,\n]{0,40}(mhspc|mcspc|hormone[- ]sensitive|castration[- ]sensitive)|(?:mhspc|mcspc|hormone[- ]sensitive|castration[- ]sensitive)[^.;,\n]{0,40}docetaxel/i.test(text)) {
+      return "docetaxel_mhspc";
+    }
+    if (/prior docetaxel|post[- ]docetaxel|after docetaxel|received docetaxel|progressed on .*docetaxel|failed docetaxel|taxane/i.test(text)) {
+      return "docetaxel_unspecified";
+    }
     return "";
   }
 
@@ -589,7 +690,7 @@
   }
 
   function detectBcgStatus(text) {
-    if (/bcg[- ]unresponsive|bcg[- ]refractory|bcg[- ]resistant|failed bcg|failure.*bcg|persistent.*after.*bcg|recurrent.*after.*bcg|after adequate bcg/i.test(text)) {
+    if (/bcg[- ]unresponsive|bcg[- ]refractory|bcg[- ]resistant|after adequate bcg/i.test(text)) {
       return "BCG-Unresponsive";
     }
     if (/bcg[- ]intolerant|intolerant.*bcg|unable to tolerate bcg|unable to receive bcg/i.test(text)) {
@@ -598,6 +699,26 @@
     if (/bcg[- ]naive|no prior bcg|bcg eligible|bcg treatment naive/i.test(text)) {
       return "BCG-Naive";
     }
+    return "";
+  }
+
+  function detectBcgAdequacy(text) {
+    if (/adequate bcg|induction plus maintenance|at least 5 of 6 induction|2 of 3 maintenance|two induction courses/i.test(text)) {
+      return "adequate";
+    }
+    if (/inadequate bcg|only \d+ (?:dose|doses)|partial bcg|incomplete bcg/i.test(text)) {
+      return "inadequate";
+    }
+    return "";
+  }
+
+  function detectBcgTimingPattern(text) {
+    if (/bcg[- ]unresponsive/i.test(text)) return "unresponsive";
+    if (/bcg[- ]refractory|persistent.*after.*bcg/i.test(text)) return "refractory";
+    if (/bcg[- ]relapsing|recurrent.*after.*bcg/i.test(text)) return "relapsing";
+    if (/bcg[- ]intolerant|intolerant.*bcg|unable to tolerate bcg/i.test(text)) return "intolerant";
+    if (/bcg[- ]naive|no prior bcg|bcg treatment naive/i.test(text)) return "naive";
+    if (/failed bcg|bcg failure|after bcg|post[- ]bcg|bcg exposed/i.test(text)) return "exposed_not_unresponsive";
     return "";
   }
 
@@ -634,6 +755,48 @@
     if (/fgfr3.{0,24}(wild[- ]type|negative)|no fgfr3 alteration|without fgfr3 alteration/i.test(text)) {
       return "wild_type";
     }
+    return "";
+  }
+
+  function detectFgfrAlteration(text) {
+    if (/fgfr3.{0,24}(fusion|rearrangement)/i.test(text)) return "fgfr3_fusion";
+    if (/fgfr3.{0,24}(mutation|mutated|altered|susceptible alteration|positive)|erdafitinib candidate/i.test(text)) return "fgfr3_mutation";
+    if (/fgfr2/i.test(text)) return "fgfr2";
+    if (/fgfr.{0,24}(mutation|mutated|altered|alteration|fusion|positive)/i.test(text)) return "fgfr_unspecified";
+    if (/fgfr.{0,24}(wild[- ]type|negative)|no fgfr alteration/i.test(text)) return "fgfr_negative";
+    return "";
+  }
+
+  function detectPlatinumStatus(text) {
+    if (/stable after (?:first[- ]line )?(?:platinum|gem[/-]cis|gem[/-]carbo|gemcitabine[- \/](?:cisplatin|carboplatin))|respond(?:ed|ing|er)? after (?:first[- ]line )?(?:platinum|gem[/-]cis|gem[/-]carbo)|no progression after (?:first[- ]line )?(?:platinum|gem[/-]cis|gem[/-]carbo)/i.test(text)) {
+      return "post_platinum_nonprogressing";
+    }
+    if (/progress(?:ed|ion)? (?:on|after|following) (?:platinum|cisplatin|carboplatin|gem[/-]cis|gem[/-]carbo)|platinum[- ]refractory|platinum[- ]resistant/i.test(text)) {
+      return "post_platinum_progressed";
+    }
+    if (/post[- ]platinum|prior platinum|after prior platinum|received platinum|platinum exposed/i.test(text)) {
+      return "platinum_exposed";
+    }
+    if (/platinum[- ]ineligible|unable to receive platinum/i.test(text)) {
+      return "platinum_ineligible";
+    }
+    if (/carboplatin[- ]eligible|carbo[- ]eligible/i.test(text)) {
+      return "carbo_eligible";
+    }
+    if (/cisplatin[- ]ineligible|cisplatin[- ]unfit|ineligible for cisplatin/i.test(text)) {
+      return "cis_ineligible";
+    }
+    if (/cisplatin[- ]eligible|cisplatin[- ]fit|eligible for cisplatin|fit for cisplatin/i.test(text)) {
+      return "cis_eligible";
+    }
+    return "";
+  }
+
+  function detectPerioperativeStatus(text) {
+    if (/trimodality|bladder[- ]sparing|bladder[- ]preservation|\btmt\b|chemoradiation/i.test(text)) return "trimodality_candidate";
+    if (/post[- ]cystectomy|after cystectomy|adjuvant/i.test(text)) return "post_cystectomy";
+    if (/cystectomy planned|radical cystectomy planned|planning cystectomy/i.test(text)) return "cystectomy_planned";
+    if (/neoadjuvant|pre[- ]cystectomy|before cystectomy|perioperative/i.test(text)) return "neoadjuvant_candidate";
     return "";
   }
 
@@ -723,7 +886,7 @@
     if (/io[- ]naive|no prior io|no prior immunotherapy|no prior pd-?1|no prior pd-?l1/i.test(text)) {
       return "no";
     }
-    if (/prior io|prior immunotherapy|prior pd-?1|prior pd-?l1|received nivolumab|received pembrolizumab|received ipilimumab|post[- ]io/i.test(text)) {
+    if (/prior io|prior immunotherapy|prior pd-?1|prior pd-?l1|received nivolumab|received pembrolizumab|received ipilimumab|post[- ]io|after (?:nivolumab|pembrolizumab|ipilimumab)|progressed on (?:nivolumab|pembrolizumab|ipilimumab)|\b(?:nivolumab|pembrolizumab|ipilimumab)\b/i.test(text)) {
       return "yes";
     }
     return "";
@@ -733,7 +896,7 @@
     if (/vegf[- ]tki[- ]naive|tki[- ]naive|no prior vegf|no prior tki|no prior vegf\/tki/i.test(text)) {
       return "no";
     }
-    if (/prior vegf|prior tki|prior vegf\/tki|received cabozantinib|received axitinib|received lenvatinib|received sunitinib|received pazopanib|post[- ]tki/i.test(text)) {
+    if (/prior vegf|prior tki|prior vegf\/tki|received cabozantinib|received axitinib|received lenvatinib|received sunitinib|received pazopanib|post[- ]tki|after (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)|progressed on (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)|\b(?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)\b/i.test(text)) {
       return "yes";
     }
     return "";
@@ -889,9 +1052,56 @@
   }
 
   function detectStage1RiskFactors(text) {
+    if (/no lymphovascular invasion|without lymphovascular invasion|\blvi[- ]negative|\blvi negative|no lvi/i.test(text)) {
+      return "absent";
+    }
     if (/lymphovascular invasion|\blvi\b|spermatic cord invasion|rete testis|risk factors?/i.test(text)) {
       return "present";
     }
+    return "";
+  }
+
+  function detectGctResidualMassSizeCm(text) {
+    const patterns = [
+      /residual (?:mass|node|lesion)[^.;,\n]{0,24}?(\d+(?:\.\d+)?)\s*(cm|centimeters?|mm|millimeters?)/i,
+      /(\d+(?:\.\d+)?)\s*(cm|centimeters?|mm|millimeters?)[^.;,\n]{0,24}?residual (?:mass|node|lesion)/i
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (!match) {
+        continue;
+      }
+      const amount = Number(match[1]);
+      const unit = (match[2] || "").toLowerCase();
+      if (!Number.isFinite(amount)) {
+        continue;
+      }
+      return unit.startsWith("mm") || unit.startsWith("millimeter") ? String(amount / 10) : String(amount);
+    }
+    return "";
+  }
+
+  function detectGctMarkerTrend(text) {
+    if (/markers? normaliz(?:ed|ing)|afp normaliz(?:ed|ing)|(?:beta[- ]?hcg|hcg) normaliz(?:ed|ing)|ldh normaliz(?:ed|ing)/i.test(text)) {
+      return "normalizing";
+    }
+    if (/markers normal|normal markers|afp normal|beta[- ]?hcg normal|hcg normal|ldh normal|marker negative/i.test(text)) {
+      return "normal";
+    }
+    if (/markers? rising|afp rising|(?:beta[- ]?hcg|hcg) rising|ldh rising|progressive marker/i.test(text)) {
+      return "rising";
+    }
+    if (/persistently elevated|remain(?:s|ed)? elevated|markers? elevated|afp elevated|(?:beta[- ]?hcg|hcg) elevated|ldh elevated/i.test(text)) {
+      return "persistently_elevated";
+    }
+    return "";
+  }
+
+  function detectGctSalvageLine(text) {
+    if (/late relapse/i.test(text)) return "late_relapse";
+    if (/after hdct|post[- ]hdct|prior hdct|after high[- ]dose chemotherapy|post[- ]asct|after asct/i.test(text)) return "post_hdct";
+    if (/second salvage|third[- ]line|3rd[- ]line|after (?:tip|veip|vip|gemox|gemoxp|ti-?ce)|post[- ](?:tip|veip|vip|gemox|gemoxp|ti-?ce)|after second[- ]line/i.test(text)) return "second_salvage";
+    if (/first salvage|relapsed after (?:bep|ep|first[- ]line)|after first[- ]line|post[- ]first[- ]line|one prior line|1 prior line|second[- ]line/i.test(text)) return "first_salvage";
     return "";
   }
 
@@ -944,6 +1154,17 @@
           ids.push("crpc_nonmetastatic");
         } else if (axes.metastaticStatus === "metastatic") {
           if (axes.priorArpi === "yes") {
+            if (axes.priorDocetaxel === "no" && axes.psmaStatus === "positive") {
+              ids.push("crpc_metastatic_postARPI_taxane_naive_psma_positive");
+            }
+            if (axes.priorDocetaxel === "yes") {
+              ids.push("crpc_metastatic_postARPI_post_taxane");
+            }
+            if (axes.hrrGene === "brca1" || axes.hrrGene === "brca2" || axes.hrrGene === "brca_unspecified") {
+              ids.push("crpc_metastatic_brca_mutated");
+            } else if (axes.biomarkerHrr === "positive") {
+              ids.push("crpc_metastatic_hrr_mutated_nonbrca");
+            }
             ids.push("crpc_metastatic_postARPI", "crpc_general");
           } else if (axes.priorArpi === "no") {
             ids.push("crpc_metastatic_preARPI", "crpc_general");
@@ -956,13 +1177,22 @@
       }
 
       if (parsed.diseaseGroup === "cspc") {
-        if (axes.diseaseVolume === "high_volume") {
-          ids.push("cspc_high_volume", "cspc_general");
+        if (axes.hrrGene === "brca2") {
+          ids.push("cspc_brca2_mutated");
+        }
+        if (axes.prostateVolumeClass === "high_volume_chaarted" || axes.diseaseVolume === "high_volume") {
+          ids.push("cspc_high_volume_chaarted", "cspc_high_volume", "cspc_general");
+        } else if (axes.prostateVolumeClass === "low_volume" || axes.diseaseVolume === "low_volume") {
+          ids.push("cspc_low_volume", "cspc_general");
         } else if (axes.diseaseVolume === "oligometastatic") {
           ids.push("cspc_oligometastatic", "cspc_general");
         } else {
-          ids.push("cspc_high_volume", "cspc_general", "cspc_oligometastatic");
+          ids.push("cspc_high_volume", "cspc_low_volume", "cspc_general", "cspc_oligometastatic");
         }
+      }
+
+      if (["small_cell", "neuroendocrine", "aggressive_variant", "mixed"].includes(axes.prostateHistology)) {
+        ids.push("crpc_neuroendocrine_small_cell");
       }
 
       if (parsed.diseaseGroup === "localized" || parsed.diseaseGroup === "bcr") {
@@ -1000,14 +1230,19 @@
     const hrrState = detectHrrState(text);
     parsed.clinicalAxes.biomarkerHrr = hrrState.value;
     parsed.clinicalAxes.biomarkerLabel = hrrState.label;
+    parsed.clinicalAxes.hrrGene = detectHrrGene(text);
 
     parsed.clinicalAxes.psmaStatus = detectPsmaState(text);
+    parsed.clinicalAxes.psmaPetPattern = detectPsmaPetPattern(text);
 
     const classifierState = detectGenomicClassifier(text);
     parsed.clinicalAxes.genomicClassifier = classifierState.value;
     parsed.clinicalAxes.genomicClassifierLabel = classifierState.label;
 
     parsed.clinicalAxes.diseaseVolume = detectDiseaseVolume(text);
+    parsed.clinicalAxes.prostateVolumeClass = detectProstateVolumeClass(text);
+    parsed.clinicalAxes.prostateHistology = detectProstateHistology(text);
+    parsed.clinicalAxes.taxaneExposure = detectTaxaneExposure(text);
     parsed.clinicalAxes.adtStatus = detectAdtState(text);
 
     if (/declines further hormonal therapy/i.test(text)) {
@@ -1028,28 +1263,52 @@
     if (parsed.clinicalAxes.priorDocetaxel === "no") addChip(parsed.chips, "Treatment", "Chemo-naive");
     if (parsed.clinicalAxes.priorDocetaxel === "yes") addChip(parsed.chips, "Treatment", "Prior docetaxel");
     if (parsed.clinicalAxes.biomarkerLabel) addChip(parsed.chips, "Biomarker", parsed.clinicalAxes.biomarkerLabel);
+    if (parsed.clinicalAxes.hrrGene && parsed.clinicalAxes.hrrGene !== "other_hrr") addChip(parsed.chips, "Biomarker", parsed.clinicalAxes.hrrGene.replace(/_/g, " ").toUpperCase());
     if (parsed.clinicalAxes.psmaStatus === "positive") addChip(parsed.chips, "Biomarker", "PSMA-confirmed");
     if (parsed.clinicalAxes.genomicClassifierLabel) addChip(parsed.chips, "Biomarker", parsed.clinicalAxes.genomicClassifierLabel);
     if (parsed.clinicalAxes.diseaseVolume === "high_volume") addChip(parsed.chips, "Disease", "High-volume");
     if (parsed.clinicalAxes.diseaseVolume === "low_volume") addChip(parsed.chips, "Disease", "Low-volume");
     if (parsed.clinicalAxes.diseaseVolume === "oligometastatic") addChip(parsed.chips, "Disease", "Oligometastatic");
+    if (parsed.clinicalAxes.prostateVolumeClass === "high_volume_chaarted") addChip(parsed.chips, "Disease", "High-volume by CHAARTED clues");
+    if (parsed.clinicalAxes.prostateVolumeClass === "possible_high_volume") addChip(parsed.chips, "Disease", "Possible high-volume");
+    if (parsed.clinicalAxes.prostateHistology && parsed.clinicalAxes.prostateHistology !== "adenocarcinoma") addChip(parsed.chips, "Disease", parsed.clinicalAxes.prostateHistology.replace(/_/g, " "));
+    if (parsed.clinicalAxes.taxaneExposure && parsed.clinicalAxes.taxaneExposure !== "none") addChip(parsed.chips, "Treatment", parsed.clinicalAxes.taxaneExposure.replace(/_/g, " "));
     if (parsed.clinicalAxes.adtStatus === "naive") addChip(parsed.chips, "Treatment", "ADT-naive");
   }
 
   function parseBladder(parsed, text) {
     parsed.clinicalAxes.bcgStatus = detectBcgStatus(text);
+    parsed.clinicalAxes.bcgAdequacy = detectBcgAdequacy(text);
+    parsed.clinicalAxes.bcgTimingPattern = detectBcgTimingPattern(text);
     parsed.clinicalAxes.cisplatinStatus = detectCisplatinStatus(text);
     parsed.clinicalAxes.cisPapillaryPattern = detectCisPapillaryPattern(text);
     parsed.clinicalAxes.fgfr3Status = detectFgfr3Status(text);
+    parsed.clinicalAxes.fgfrAlteration = detectFgfrAlteration(text);
     parsed.clinicalAxes.her2Status = detectHer2Status(text);
     parsed.clinicalAxes.priorSystemicLines = detectPriorSystemicLines(text);
     parsed.clinicalAxes.priorIo = detectPriorIo(text);
+    parsed.clinicalAxes.platinumStatus = detectPlatinumStatus(text);
+    parsed.clinicalAxes.perioperativeStatus = detectPerioperativeStatus(text);
 
     if (/\bnmibc\b|non[- ]muscle[- ]invasive|carcinoma in situ|high[- ]grade t1|intravesical/i.test(text)) {
       parsed.diseaseGroup = "nmibc";
       if (parsed.clinicalAxes.bcgStatus === "BCG-Unresponsive") {
-        parsed.diseaseLabel = "NMIBC — BCG-unresponsive";
-        pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_unresponsive", "nmibc_general"]);
+        if (parsed.clinicalAxes.cisPapillaryPattern === "papillary_only") {
+          parsed.diseaseLabel = "NMIBC — BCG-unresponsive papillary-only";
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_unresponsive_papillary_only", "nmibc_bcg_unresponsive", "nmibc_general"]);
+        } else if (parsed.clinicalAxes.cisPapillaryPattern === "cis_only" || parsed.clinicalAxes.cisPapillaryPattern === "cis_plus_papillary") {
+          parsed.diseaseLabel = "NMIBC — BCG-unresponsive CIS";
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_unresponsive_cis", "nmibc_bcg_unresponsive", "nmibc_general"]);
+        } else {
+          parsed.diseaseLabel = "NMIBC — BCG-unresponsive";
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_unresponsive", "nmibc_general"]);
+        }
+      } else if (parsed.clinicalAxes.bcgStatus === "BCG-Intolerant") {
+        parsed.diseaseLabel = "NMIBC — BCG-intolerant";
+        pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_intolerant", "nmibc_general"]);
+      } else if (parsed.clinicalAxes.bcgTimingPattern === "exposed_not_unresponsive") {
+        parsed.diseaseLabel = "NMIBC — BCG-exposed";
+        pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_bcg_exposed_not_unresponsive", "nmibc_bcg_unresponsive", "nmibc_general"]);
       } else if (parsed.clinicalAxes.bcgStatus === "BCG-Naive" || /high[- ]risk|cis with|cis\b|high[- ]grade/i.test(text)) {
         parsed.diseaseLabel = "NMIBC — high risk";
         pushDiseaseIds(parsed.diseaseSettingIds, ["nmibc_high_risk_bcg_naive", "nmibc_general"]);
@@ -1063,23 +1322,30 @@
     } else if (/metastatic|stage ivb|m1|advanced urothelial|advanced bladder|distant metast/i.test(text)) {
       parsed.diseaseGroup = "metastatic";
       parsed.diseaseLabel = "Metastatic urothelial cancer";
-      if (parsed.clinicalAxes.priorSystemicLines === "1" || /post[- ]platinum|prior platinum|platinum[- ]refractory|platinum[- ]resistant|second[- ]line/i.test(text)) {
+      if (parsed.clinicalAxes.platinumStatus === "post_platinum_nonprogressing") {
+        parsed.diseaseLabel = "Metastatic urothelial — maintenance after platinum";
+        pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_maintenance_post_platinum_nonprogressing", "metastatic_general"]);
+      } else if (parsed.clinicalAxes.priorSystemicLines === "1" || /post[- ]platinum|prior platinum|platinum[- ]refractory|platinum[- ]resistant|second[- ]line/i.test(text)) {
         parsed.diseaseLabel = "Metastatic urothelial — post-platinum";
+        if (parsed.clinicalAxes.fgfrAlteration === "fgfr3_mutation" || parsed.clinicalAxes.fgfrAlteration === "fgfr3_fusion") {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_fgfr3_altered_post_systemic"]);
+        }
         pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_2l_plus", "metastatic_general"]);
       } else if (parsed.clinicalAxes.priorSystemicLines === "0") {
         if (parsed.clinicalAxes.cisplatinStatus === "Cisplatin-Ineligible") {
           parsed.diseaseLabel = "Metastatic urothelial — 1L cisplatin-ineligible";
-          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_cisplatin_ineligible", "metastatic_1l_general", "metastatic_general"]);
+          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_all_comers_ev_pembro", "metastatic_1l_cisplatin_ineligible", "metastatic_1l_general", "metastatic_general"]);
         } else if (parsed.clinicalAxes.cisplatinStatus === "Cisplatin-Eligible") {
           parsed.diseaseLabel = "Metastatic urothelial — 1L cisplatin-eligible";
-          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_cisplatin_eligible", "metastatic_1l_general", "metastatic_general"]);
+          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_all_comers_ev_pembro", "metastatic_1l_cisplatin_eligible", "metastatic_1l_general", "metastatic_general"]);
         } else {
           parsed.diseaseLabel = "Metastatic urothelial — 1L";
-          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_cisplatin_eligible", "metastatic_1l_cisplatin_ineligible", "metastatic_1l_general", "metastatic_general"]);
+          pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_1l_all_comers_ev_pembro", "metastatic_1l_cisplatin_eligible", "metastatic_1l_cisplatin_ineligible", "metastatic_1l_general", "metastatic_general"]);
         }
       } else {
         pushDiseaseIds(parsed.diseaseSettingIds, [
           "metastatic_2l_plus",
+          "metastatic_1l_all_comers_ev_pembro",
           "metastatic_1l_cisplatin_eligible",
           "metastatic_1l_cisplatin_ineligible",
           "metastatic_1l_general",
@@ -1115,17 +1381,22 @@
 
     if (parsed.diseaseLabel) addChip(parsed.chips, "Disease", parsed.diseaseLabel);
     if (parsed.clinicalAxes.bcgStatus) addChip(parsed.chips, "Treatment", parsed.clinicalAxes.bcgStatus);
+    if (parsed.clinicalAxes.bcgAdequacy) addChip(parsed.chips, "Treatment", `BCG ${parsed.clinicalAxes.bcgAdequacy}`);
+    if (parsed.clinicalAxes.bcgTimingPattern === "exposed_not_unresponsive") addChip(parsed.chips, "Treatment", "BCG-exposed");
     if (parsed.clinicalAxes.cisplatinStatus) addChip(parsed.chips, "Treatment", parsed.clinicalAxes.cisplatinStatus);
     if (parsed.clinicalAxes.cisPapillaryPattern === "cis_only") addChip(parsed.chips, "Disease", "CIS only");
     if (parsed.clinicalAxes.cisPapillaryPattern === "papillary_only") addChip(parsed.chips, "Disease", "Papillary only");
     if (parsed.clinicalAxes.cisPapillaryPattern === "cis_plus_papillary") addChip(parsed.chips, "Disease", "CIS + papillary");
     if (parsed.clinicalAxes.fgfr3Status === "susceptible_alteration") addChip(parsed.chips, "Biomarker", "FGFR3 altered");
+    if (parsed.clinicalAxes.fgfrAlteration === "fgfr_unspecified") addChip(parsed.chips, "Biomarker", "FGFR altered");
     if (parsed.clinicalAxes.her2Status === "ihc_3_plus") addChip(parsed.chips, "Biomarker", "HER2 IHC 3+");
     if (parsed.clinicalAxes.her2Status === "ihc_2_plus") addChip(parsed.chips, "Biomarker", "HER2 IHC 2+");
     if (parsed.clinicalAxes.priorSystemicLines === "0") addChip(parsed.chips, "Treatment", "Treatment-naive");
     if (parsed.clinicalAxes.priorSystemicLines === "1") addChip(parsed.chips, "Treatment", "Previously treated");
     if (parsed.clinicalAxes.priorIo === "no") addChip(parsed.chips, "Treatment", "IO-naive");
     if (parsed.clinicalAxes.priorIo === "yes") addChip(parsed.chips, "Treatment", "Prior IO");
+    if (parsed.clinicalAxes.platinumStatus === "post_platinum_nonprogressing") addChip(parsed.chips, "Treatment", "Post-platinum nonprogressing");
+    if (parsed.clinicalAxes.platinumStatus === "post_platinum_progressed") addChip(parsed.chips, "Treatment", "Progressed after platinum");
   }
 
   function parseKidney(parsed, text) {
@@ -1134,6 +1405,9 @@
     parsed.clinicalAxes.priorSystemicLines = detectPriorSystemicLines(text);
     parsed.clinicalAxes.priorIo = detectPriorIo(text);
     parsed.clinicalAxes.priorVegfTki = detectPriorVegfTki(text);
+    if (!parsed.clinicalAxes.priorSystemicLines && parsed.clinicalAxes.priorIo === "yes" && parsed.clinicalAxes.priorVegfTki === "yes") {
+      parsed.clinicalAxes.priorSystemicLines = "1";
+    }
     parsed.clinicalAxes.nephrectomyStatus = detectNephrectomyStatus(text);
     parsed.clinicalAxes.vhlStatus = detectVhlStatus(text);
     parsed.clinicalAxes.metAlteration = detectMetAlteration(text);
@@ -1169,6 +1443,9 @@
           }
         } else if (lines === "1" && parsed.clinicalAxes.priorIo === "yes") {
           parsed.diseaseLabel = "Metastatic ccRCC — IO experienced";
+          if (parsed.clinicalAxes.priorVegfTki === "yes") {
+            pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_ccrcc_post_pd1_vegf_tki_belzutifan"]);
+          }
           pushDiseaseIds(parsed.diseaseSettingIds, ["metastatic_ccrcc_2l_io_experienced", "metastatic_ccrcc_general"]);
         } else if (lines === "1") {
           parsed.diseaseLabel = "Metastatic ccRCC — previously treated";
@@ -1276,7 +1553,10 @@
     parsed.clinicalAxes.priorChemoLines = detectPriorChemoLines(text);
     parsed.clinicalAxes.priorHdct = detectPriorHdct(text);
     parsed.clinicalAxes.markerStatus = detectMarkerStatus(text);
+    parsed.clinicalAxes.gctMarkerTrend = detectGctMarkerTrend(text);
     parsed.clinicalAxes.stage1RiskFactors = detectStage1RiskFactors(text);
+    parsed.clinicalAxes.gctResidualMassSizeCm = detectGctResidualMassSizeCm(text);
+    parsed.clinicalAxes.gctSalvageLine = detectGctSalvageLine(text);
     const persistentMarkersAfterOrchiectomy = detectPersistentMarkersAfterOrchiectomy(text);
     if (/prior rplnd|post[- ]rplnd|after rplnd/i.test(text)) {
       parsed.clinicalAxes.rplndStatus = "prior_rplnd";
@@ -1323,9 +1603,19 @@
       parsed.diseaseGroup = "post_first_line";
       if (histology === "pure_seminoma") {
         parsed.diseaseLabel = "Seminoma — post first-line management";
+        const residualSize = Number(parsed.clinicalAxes.gctResidualMassSizeCm);
+        if (Number.isFinite(residualSize) && residualSize > 3) {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_post_chemo_residual_gt3cm_pet_timing"]);
+        } else if (Number.isFinite(residualSize) && residualSize <= 3) {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_post_chemo_residual_le3cm"]);
+        }
         pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_post_first_line", "gct_advanced_general"]);
       } else if (histology === "nsgct" || histology === "mixed_gct") {
         parsed.diseaseLabel = "NSGCT — post first-line management";
+        const residualSize = Number(parsed.clinicalAxes.gctResidualMassSizeCm);
+        if (Number.isFinite(residualSize) && residualSize > 1 && ["normal", "normalizing"].includes(parsed.clinicalAxes.gctMarkerTrend || parsed.clinicalAxes.markerStatus)) {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_post_chemo_residual_mass_gt1cm_markers_normalizing"]);
+        }
         pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_post_first_line", "gct_advanced_general"]);
       } else {
         parsed.diseaseLabel = "GCT — post first-line management";
@@ -1339,14 +1629,23 @@
           pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_3l_plus", "gct_advanced_general"]);
         } else {
           parsed.diseaseLabel = "Seminoma — recurrent / 2L";
+          if (parsed.clinicalAxes.gctSalvageLine === "first_salvage") {
+            pushDiseaseIds(parsed.diseaseSettingIds, ["gct_first_salvage"]);
+          }
           pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_recurrent_2l", "gct_advanced_general"]);
         }
       } else if (histology === "nsgct" || histology === "mixed_gct") {
         if (lines === "2+" || parsed.clinicalAxes.priorHdct === "yes") {
           parsed.diseaseLabel = "NSGCT — 3L+";
+          if (parsed.clinicalAxes.priorHdct === "yes") {
+            pushDiseaseIds(parsed.diseaseSettingIds, ["gct_post_hdct_relapse"]);
+          }
           pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_3l_plus", "gct_advanced_general"]);
         } else {
           parsed.diseaseLabel = "NSGCT — recurrent / 2L";
+          if (parsed.clinicalAxes.gctSalvageLine === "first_salvage") {
+            pushDiseaseIds(parsed.diseaseSettingIds, ["gct_first_salvage"]);
+          }
           pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_recurrent_2l", "gct_advanced_general"]);
         }
       } else {
@@ -1361,9 +1660,14 @@
       parsed.diseaseGroup = "stage1";
       if (histology === "pure_seminoma") {
         parsed.diseaseLabel = "Seminoma — stage I";
-        pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_stage1", "gct_stage1_general"]);
+        pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_stage1_surveillance", "seminoma_stage1", "gct_stage1_general"]);
       } else if (histology === "nsgct" || histology === "mixed_gct") {
         parsed.diseaseLabel = "NSGCT — stage I";
+        if (parsed.clinicalAxes.stage1RiskFactors === "present") {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1_lvi_positive"]);
+        } else if (parsed.clinicalAxes.stage1RiskFactors === "absent") {
+          pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1_lvi_negative"]);
+        }
         pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1", "gct_stage1_general"]);
       } else {
         parsed.diseaseLabel = "GCT — stage I";
@@ -1422,6 +1726,9 @@
     if (parsed.clinicalAxes.markerStatus === "hcg_elevated") addChip(parsed.chips, "Biomarker", "beta-hCG elevated");
     if (parsed.clinicalAxes.markerStatus === "ldh_elevated") addChip(parsed.chips, "Biomarker", "LDH elevated");
     if (parsed.clinicalAxes.markerStatus === "multiple_elevated") addChip(parsed.chips, "Biomarker", "Multiple markers elevated");
+    if (parsed.clinicalAxes.gctResidualMassSizeCm) addChip(parsed.chips, "Disease", `Residual mass ${parsed.clinicalAxes.gctResidualMassSizeCm} cm`);
+    if (parsed.clinicalAxes.gctMarkerTrend) addChip(parsed.chips, "Biomarker", `Markers ${parsed.clinicalAxes.gctMarkerTrend.replace(/_/g, " ")}`);
+    if (parsed.clinicalAxes.gctSalvageLine) addChip(parsed.chips, "Treatment", parsed.clinicalAxes.gctSalvageLine.replace(/_/g, " "));
   }
 
   function populateTemporalFacts(parsed, text) {

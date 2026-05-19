@@ -20,13 +20,29 @@
       title: "BRCA/HRR status not confirmed",
       message: "Order germline and somatic HRR testing before referring to PARP inhibitor trials. Most labs return in 2-3 weeks."
     },
+    brca2_specificity_needed: {
+      title: "Confirm BRCA/HRR gene specificity",
+      message: "Clarify the exact HRR gene alteration. BRCA2-specific trials should not be treated the same as ATM, CDK12, PALB2, or unspecified HRR alterations."
+    },
     psma_status: {
       title: "PSMA-PET required",
       message: "Confirm PSMA imaging has been performed and is positive before referring to radioligand trials."
     },
+    psma_pet_pattern_needed: {
+      title: "Confirm PSMA-PET pattern",
+      message: "For PSMA-targeted trials, verify PSMA positivity, scan recency, and whether there are dominant PSMA-negative or discordant lesions."
+    },
     disease_volume: {
       title: "Confirm disease volume",
       message: "Review imaging for bone lesion count and visceral disease. High-volume usually means 4 or more bone metastases or any visceral metastasis."
+    },
+    prostate_variant_histology: {
+      title: "Confirm prostate histology",
+      message: "Small-cell, neuroendocrine, or aggressive-variant prostate cancer may require different trials than adenocarcinoma-only protocols."
+    },
+    taxane_setting_needed: {
+      title: "Confirm taxane exposure setting",
+      message: "Clarify whether docetaxel was given in the hormone-sensitive setting, castration-resistant setting, or both."
     },
     prior_arpi: {
       title: "Confirm ARPI history",
@@ -56,6 +72,10 @@
       title: "Confirm BCG history",
       message: "Confirm whether the patient is BCG-unresponsive, BCG-intolerant, or BCG-naive before referring to NMIBC trials."
     },
+    bcg_adequacy_timing_needed: {
+      title: "Confirm BCG adequacy and timing",
+      message: "Vague BCG failure is not enough. Confirm adequate BCG exposure, recurrence/persistence timing, and whether the disease meets BCG-unresponsive criteria."
+    },
     cis_papillary_pattern: {
       title: "Confirm CIS / papillary pattern",
       message: "Confirm whether the bladder cancer is CIS-only, papillary-only, or mixed CIS plus papillary disease."
@@ -67,6 +87,10 @@
     fgfr3_status: {
       title: "Confirm FGFR3 alteration status",
       message: "Confirm whether a susceptible FGFR3 alteration is present before referring to FGFR3-directed urothelial trials."
+    },
+    fgfr3_specificity_needed: {
+      title: "Confirm FGFR3 specificity",
+      message: "Clarify whether the FGFR alteration is FGFR3-specific. FGFR2 or unspecified FGFR alterations should not be treated as equivalent for FGFR3-directed trials."
     },
     her2_status: {
       title: "Confirm HER2 status",
@@ -104,6 +128,10 @@
       title: "Confirm prior systemic therapy line",
       message: "Clarify whether the patient is treatment-naive, post-platinum, or more heavily pretreated before referral."
     },
+    platinum_response_needed: {
+      title: "Confirm platinum response",
+      message: "For maintenance urothelial trials, clarify whether disease was stable/responding or progressed after first-line platinum."
+    },
     histology: {
       title: "Confirm histology",
       message: "Confirm the relevant histologic subtype, because several kidney and testicular trials are histology-restricted."
@@ -119,6 +147,10 @@
     vegf_tki_history: {
       title: "Confirm prior VEGF-TKI exposure",
       message: "Clarify whether the patient has previously received VEGF-targeted TKI therapy."
+    },
+    pd1_vegf_sequence_needed: {
+      title: "Confirm PD-1/PD-L1 and VEGF-TKI sequence",
+      message: "Later-line RCC trials may require both prior checkpoint inhibitor and prior VEGF-TKI exposure."
     },
     nephrectomy_status: {
       title: "Confirm nephrectomy status",
@@ -159,6 +191,18 @@
     marker_status: {
       title: "Confirm tumor marker status",
       message: "Clarify whether AFP, beta-hCG, and LDH are normal, rising, or persistently elevated."
+    },
+    gct_residual_mass_size_needed: {
+      title: "Confirm residual mass size",
+      message: "Post-chemotherapy GCT management depends on residual mass size and histology."
+    },
+    gct_marker_trend_needed: {
+      title: "Confirm tumor marker trend",
+      message: "Clarify whether markers are normal, normalizing, persistently elevated, or rising before referral."
+    },
+    gct_salvage_line_needed: {
+      title: "Confirm salvage line",
+      message: "Clarify whether this is first salvage, later salvage, or relapse after high-dose chemotherapy with stem-cell rescue."
     },
     stage1_risk_factors: {
       title: "Confirm stage I risk factors",
@@ -472,6 +516,33 @@
     return `${parsedQuery.clinicalAxes.biomarkerLabel} eligible`;
   }
 
+  function deriveProstateHrrRequirement(trial) {
+    const axes = trial.clinicalAxes || {};
+    if (isMeaningfulAxisValue(axes.hrrGene)) {
+      return canonicalToken(axes.hrrGene);
+    }
+
+    const text = `${buildTrialSearchText(trial)} ${buildTrialEligibilityText(trial)}`;
+    if (/brca\s*2|brca2/i.test(text)) return "brca2";
+    if (/brca\s*1|brca1/i.test(text)) return "brca1";
+    if (/\bbrca\b/i.test(text) && !/\bhrr\b|homologous recombination|atm|cdk12|palb2|chek2/i.test(text)) return "brca_unspecified";
+    if (/\batm\b/i.test(text)) return "atm";
+    if (/\bcdk12\b/i.test(text)) return "cdk12";
+    if (/\bpalb2\b/i.test(text)) return "palb2";
+    if (/\bchek2\b/i.test(text)) return "chek2";
+    return "";
+  }
+
+  function hrrGeneMatchesRequirement(queryGene, requirement) {
+    const queryToken = canonicalToken(queryGene);
+    const requirementToken = canonicalToken(requirement);
+    if (!requirementToken) return true;
+    if (!queryToken) return false;
+    if (queryToken === requirementToken) return true;
+    if (requirementToken === "brca_unspecified" && ["brca1", "brca2", "brca_unspecified"].includes(queryToken)) return true;
+    return false;
+  }
+
   function humanizeTherapyLabel(value) {
     const label = normalizeWhitespace(value).replace(/_/g, " ");
     return label.toLowerCase() === "systemic therapy" ? "systemic therapy" : label;
@@ -782,6 +853,21 @@
     return localizedSignals.test(text) && !advancedSignals.test(text);
   }
 
+  function deriveProstateTrialHistology(trial) {
+    const axes = trial.clinicalAxes || {};
+    if (isMeaningfulAxisValue(axes.prostateHistology)) {
+      return canonicalToken(axes.prostateHistology);
+    }
+    const text = `${buildTrialSearchText(trial)} ${buildTrialEligibilityText(trial)}`;
+    if (/small[- ]cell/i.test(text)) return "small_cell";
+    if (/neuroendocrine|\bnepc\b/i.test(text)) return "neuroendocrine";
+    if (/aggressive[- ]variant|anaplastic/i.test(text)) return "aggressive_variant";
+    if (/adenocarcinoma/i.test(text) && !/small[- ]cell|neuroendocrine|\bnepc\b|aggressive[- ]variant/i.test(text)) {
+      return "adenocarcinoma";
+    }
+    return "";
+  }
+
   function applyTemporalSignals(state) {
     const temporal = state.parsedQuery.temporalFacts || {};
 
@@ -1030,6 +1116,7 @@
 
   function resolveBladderLineRequirement(trial) {
     const ids = getTrialDiseaseIds(trial);
+    if (ids.includes("metastatic_maintenance_post_platinum_nonprogressing")) return "post_platinum_nonprogressing";
     if (ids.includes("metastatic_2l_plus")) return "1_plus";
     if (ids.some(id => ["metastatic_1l_cisplatin_ineligible", "metastatic_1l_cisplatin_eligible", "metastatic_1l_general"].includes(id))) return "0";
     return "";
@@ -1056,6 +1143,15 @@
     if (ids.some(id => ["metastatic_ccrcc_2l_io_experienced", "metastatic_ccrcc_2l_io_naive"].includes(id))) return "1";
     if (ids.includes("metastatic_ccrcc_3l_plus")) return "2+";
     return "";
+  }
+
+  function kidneyRequiresPriorPd1AndVegf(trial) {
+    const ids = getTrialDiseaseIds(trial);
+    if (ids.includes("metastatic_ccrcc_post_pd1_vegf_tki_belzutifan")) {
+      return true;
+    }
+    const text = `${buildTrialSearchText(trial)} ${buildTrialEligibilityText(trial)}`;
+    return /belzutifan|welireg|after[^.;,\n]{0,60}(pd-?1|pd-?l1|checkpoint|immunotherapy)[^.;,\n]{0,60}(vegf|tki)|after[^.;,\n]{0,60}(vegf|tki)[^.;,\n]{0,60}(pd-?1|pd-?l1|checkpoint|immunotherapy)/i.test(text);
   }
 
   function resolveTesticularChemoRequirement(trial) {
@@ -1089,6 +1185,21 @@
       return "stage1";
     }
     return "";
+  }
+
+  function isPostChemoResidualGctTrial(trial) {
+    const ids = getTrialDiseaseIds(trial);
+    if (ids.some(id => [
+      "nsgct_post_first_line",
+      "seminoma_post_first_line",
+      "nsgct_post_chemo_residual_mass_gt1cm_markers_normalizing",
+      "seminoma_post_chemo_residual_le3cm",
+      "seminoma_post_chemo_residual_gt3cm_pet_timing"
+    ].includes(id))) {
+      return true;
+    }
+    const text = `${buildTrialSearchText(trial)} ${buildTrialEligibilityText(trial)}`;
+    return /residual (?:mass|node|lesion)|post[- ]chemotherapy rplnd|pc[- ]rplnd/i.test(text);
   }
 
   function testicularPathwayCompatible(trial, parsedQuery) {
@@ -1390,6 +1501,23 @@
       return finalizeMatch(state);
     }
 
+    const trialHistology = deriveProstateTrialHistology(trial);
+    const queryHistology = canonicalToken(queryAxes.prostateHistology);
+    const variantHistologies = ["small_cell", "neuroendocrine", "aggressive_variant"];
+    if (queryHistology && trialHistology) {
+      if (variantHistologies.includes(queryHistology) && trialHistology === "adenocarcinoma") {
+        state.excludes.push("prostate_variant_histology");
+      } else if (variantHistologies.includes(trialHistology) && queryHistology === "adenocarcinoma") {
+        state.excludes.push("prostate_variant_histology");
+      } else if (variantHistologies.includes(queryHistology) && queryHistology !== trialHistology) {
+        addFlag(state.flags, "prostate_variant_histology");
+      }
+    } else if (variantHistologies.includes(queryHistology) && !trialHistology) {
+      addFlag(state.flags, "prostate_variant_histology");
+    } else if (variantHistologies.includes(trialHistology) && !queryHistology) {
+      addFlag(state.flags, "prostate_variant_histology");
+    }
+
     applyBinaryAxisRule({
       trialValue: trialAxes.castrationStatus,
       queryValue: queryAxes.castrationStatus,
@@ -1431,6 +1559,9 @@
           addResolvedFact(state.resolvedFacts, "chemo-naive permitted");
         } else {
           addResolvedFact(state.resolvedFacts, "post-docetaxel");
+          if (queryAxes.taxaneExposure === "docetaxel_unspecified") {
+            addFlag(state.flags, "taxane_setting_needed");
+          }
         }
       } else {
         addFlag(state.flags, "chemotherapy_history");
@@ -1438,14 +1569,21 @@
     }
 
     if (isMeaningfulAxisValue(trialAxes.biomarkerHrr)) {
+      const hrrRequirement = deriveProstateHrrRequirement(trial);
       if (queryAxes.biomarkerHrr) {
         if (trialAxes.biomarkerHrr !== queryAxes.biomarkerHrr) {
           state.excludes.push("brca_hrr");
+        } else if (hrrRequirement && !hrrGeneMatchesRequirement(queryAxes.hrrGene, hrrRequirement)) {
+          if (queryAxes.hrrGene) {
+            state.excludes.push("brca_hrr");
+          } else {
+            addFlag(state.flags, "brca2_specificity_needed");
+          }
         } else {
           addResolvedFact(state.resolvedFacts, resolveBiomarkerFact(parsedQuery));
         }
       } else {
-        addFlag(state.flags, "brca_hrr");
+        addFlag(state.flags, hrrRequirement ? "brca2_specificity_needed" : "brca_hrr");
       }
     }
 
@@ -1453,6 +1591,8 @@
       if (queryAxes.psmaStatus) {
         if (queryAxes.psmaStatus === "negative") {
           state.excludes.push("psma_status");
+        } else if (queryAxes.psmaPetPattern === "dominant_psma_negative_lesion") {
+          addFlag(state.flags, "psma_pet_pattern_needed");
         } else {
           addResolvedFact(state.resolvedFacts, "PSMA-confirmed");
         }
@@ -1473,6 +1613,9 @@
       if (queryAxes.diseaseVolume) {
         if (trialAxes.diseaseVolume !== queryAxes.diseaseVolume) {
           state.excludes.push("disease_volume");
+        } else if (queryAxes.prostateVolumeClass === "possible_high_volume") {
+          addResolvedFact(state.resolvedFacts, "possible high-volume disease");
+          addFlag(state.flags, "disease_volume");
         } else if (queryAxes.diseaseVolume === "high_volume") {
           addResolvedFact(state.resolvedFacts, "high-volume confirmed");
         } else if (queryAxes.diseaseVolume === "oligometastatic") {
@@ -1506,7 +1649,12 @@
           state.excludes.push("bcg_status");
         } else {
           addResolvedFact(state.resolvedFacts, normalizeWhitespace(queryAxes.bcgStatus).replace(/^BCG-/, "BCG-"));
+          if (canonicalToken(queryAxes.bcgStatus) === "bcg_unresponsive" && !queryAxes.bcgAdequacy && !/bcg[- ]unresponsive/i.test(parsedQuery.rawQuery || "")) {
+            addFlag(state.flags, "bcg_adequacy_timing_needed");
+          }
         }
+      } else if (queryAxes.bcgTimingPattern === "exposed_not_unresponsive") {
+        addFlag(state.flags, "bcg_adequacy_timing_needed");
       } else {
         addFlag(state.flags, "bcg_status");
       }
@@ -1547,6 +1695,10 @@
         } else {
           addResolvedFact(state.resolvedFacts, queryAxes.fgfr3Status === "susceptible_alteration" ? "FGFR3-altered" : "FGFR3 wild-type");
         }
+      } else if (queryAxes.fgfrAlteration === "fgfr_unspecified") {
+        addFlag(state.flags, "fgfr3_specificity_needed");
+      } else if (queryAxes.fgfrAlteration && queryAxes.fgfrAlteration !== "fgfr_negative") {
+        state.excludes.push("fgfr3_status");
       } else {
         addFlag(state.flags, "fgfr3_status");
       }
@@ -1569,13 +1721,23 @@
     }
 
     const lineRequirement = resolveBladderLineRequirement(trial);
-    applyRequirementFlag(
-      state,
-      lineRequirement,
-      queryAxes.priorSystemicLines,
-      "systemic_line",
-      lineRequirement === "0" ? "treatment-naive" : lineRequirement === "1_plus" ? "previously treated" : ""
-    );
+    if (lineRequirement === "post_platinum_nonprogressing") {
+      if (queryAxes.platinumStatus === "post_platinum_nonprogressing") {
+        addResolvedFact(state.resolvedFacts, "post-platinum nonprogressing");
+      } else if (queryAxes.platinumStatus === "post_platinum_progressed") {
+        state.excludes.push("platinum_response_needed");
+      } else {
+        addFlag(state.flags, "platinum_response_needed");
+      }
+    } else {
+      applyRequirementFlag(
+        state,
+        lineRequirement,
+        queryAxes.priorSystemicLines,
+        "systemic_line",
+        lineRequirement === "0" ? "treatment-naive" : lineRequirement === "1_plus" ? "previously treated" : ""
+      );
+    }
 
     if (isMeaningfulAxisValue(trialAxes.priorIo)) {
       if (queryAxes.priorIo) {
@@ -1634,6 +1796,16 @@
       "systemic_line",
       lineRequirement === "0" ? "systemic-naive" : lineRequirement === "1" ? "one prior systemic line" : lineRequirement === "2+" ? "multiple prior lines" : ""
     );
+
+    if (kidneyRequiresPriorPd1AndVegf(trial)) {
+      if (queryAxes.priorIo === "yes" && queryAxes.priorVegfTki === "yes") {
+        addResolvedFact(state.resolvedFacts, "post-PD-1/PD-L1 and VEGF-TKI");
+      } else if (queryAxes.priorIo === "no" || queryAxes.priorVegfTki === "no") {
+        state.excludes.push("pd1_vegf_sequence_needed");
+      } else {
+        addFlag(state.flags, "pd1_vegf_sequence_needed");
+      }
+    }
 
     if (isMeaningfulAxisValue(trialAxes.priorIo)) {
       if (queryAxes.priorIo) {
@@ -1716,6 +1888,24 @@
     if (!testicularPathwayCompatible(trial, parsedQuery)) {
       state.excludes.push("chemo_lines");
       return finalizeMatch(state);
+    }
+
+    if (isPostChemoResidualGctTrial(trial)) {
+      if (!queryAxes.gctResidualMassSizeCm) {
+        addFlag(state.flags, "gct_residual_mass_size_needed");
+      } else {
+        addResolvedFact(state.resolvedFacts, `residual mass ${queryAxes.gctResidualMassSizeCm} cm`);
+      }
+
+      if (!queryAxes.gctMarkerTrend && !queryAxes.markerStatus) {
+        addFlag(state.flags, "gct_marker_trend_needed");
+      } else if (queryAxes.gctMarkerTrend) {
+        addResolvedFact(state.resolvedFacts, `markers ${normalizeWhitespace(queryAxes.gctMarkerTrend).replace(/_/g, " ")}`);
+      }
+    }
+
+    if (parsedQuery.diseaseGroup === "recurrent" && !queryAxes.gctSalvageLine && !queryAxes.priorChemoLines) {
+      addFlag(state.flags, "gct_salvage_line_needed");
     }
 
     if (isMeaningfulAxisValue(trialAxes.histology)) {

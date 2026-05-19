@@ -118,6 +118,23 @@ function buildProstateTrials() {
     interventions: ['docetaxel', 'darolutamide']
   });
 
+  const brca2McspcTrial = buildTrial({
+    id: 'brca2-mcspc',
+    title: 'BRCA2-Mutated mCSPC Trial',
+    description: 'Precision treatment for metastatic castration-sensitive prostate cancer with BRCA2 mutation.',
+    cancerType: 'Prostate',
+    phase: 'Phase III',
+    diseaseSettingPrimaryId: 'cspc_brca2_mutated',
+    diseaseSettingAllIds: ['cspc_brca2_mutated', 'cspc_general'],
+    clinicalAxes: {
+      castrationStatus: 'castration_sensitive',
+      metastaticStatus: 'metastatic',
+      biomarkerHrr: 'positive',
+      hrrGene: 'brca2'
+    },
+    conditions: ['prostate cancer']
+  });
+
   const screeningTrial = buildTrial({
     id: 'screening-gated',
     title: 'mCRPC Trial With Standard Screening Gates',
@@ -297,6 +314,7 @@ function buildProstateTrials() {
     postEnzaDocetaxelAllowedTrial,
     noCabazitaxelTrial,
     generalCrpcTrial,
+    brca2McspcTrial,
     misclassifiedLocalizedTrial
   ];
 }
@@ -341,6 +359,18 @@ function buildBladderTrials() {
     conditions: ['urothelial carcinoma']
   });
 
+  const maintenanceTrial = buildTrial({
+    id: 'muc-maintenance',
+    title: 'Avelumab Maintenance for Metastatic UC',
+    description: 'Maintenance immunotherapy for metastatic urothelial carcinoma with no progression after first-line platinum chemotherapy.',
+    cancerType: 'Bladder',
+    diseaseSettingPrimaryId: 'metastatic_maintenance_post_platinum_nonprogressing',
+    diseaseSettingAllIds: ['metastatic_maintenance_post_platinum_nonprogressing', 'metastatic_general'],
+    clinicalAxes: {},
+    conditions: ['urothelial carcinoma'],
+    interventions: ['avelumab']
+  });
+
   const fgfr3Trial = buildTrial({
     id: 'muc-fgfr3',
     title: 'Erdafitinib for FGFR3-Altered Metastatic Urothelial Cancer',
@@ -369,7 +399,7 @@ function buildBladderTrials() {
     interventions: ['trastuzumab deruxtecan']
   });
 
-  return [nmibcTrial, metastatic1LTrial, metastatic2LTrial, fgfr3Trial, her2Trial];
+  return [nmibcTrial, metastatic1LTrial, metastatic2LTrial, maintenanceTrial, fgfr3Trial, her2Trial];
 }
 
 function buildKidneyTrials() {
@@ -448,7 +478,24 @@ function buildKidneyTrials() {
     conditions: ['non-clear-cell renal cell carcinoma']
   });
 
-  return [ccRccTrial, papillaryTrial, chromophobeTrial, medullaryTrial, nccrccBasketTrial];
+  const belzutifanSequenceTrial = buildTrial({
+    id: 'ccrcc-belzutifan-sequence',
+    title: 'Belzutifan After PD-1 and VEGF-TKI for Advanced RCC',
+    description: 'Later-line belzutifan study for metastatic clear-cell RCC after prior PD-1/PD-L1 inhibitor and VEGF-TKI therapy.',
+    cancerType: 'Kidney',
+    diseaseSettingPrimaryId: 'metastatic_ccrcc_post_pd1_vegf_tki_belzutifan',
+    diseaseSettingAllIds: ['metastatic_ccrcc_post_pd1_vegf_tki_belzutifan', 'metastatic_ccrcc_general'],
+    clinicalAxes: {
+      histology: 'clear_cell',
+      priorSystemicLines: '1',
+      priorIo: 'yes',
+      priorVegfTki: 'yes'
+    },
+    conditions: ['renal cell carcinoma'],
+    interventions: ['belzutifan']
+  });
+
+  return [ccRccTrial, papillaryTrial, chromophobeTrial, medullaryTrial, nccrccBasketTrial, belzutifanSequenceTrial];
 }
 
 function buildTesticularTrials() {
@@ -609,6 +656,30 @@ function testProstate() {
   assert.equal(findEntry(result, 'triplet').match.badge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'triplet')), ['adt_history']);
 
+  parsed = PatientQueryParser.parse(
+    'Male with de novo mCSPC, 4 bone metastases including one rib lesion, no visceral disease. No prior docetaxel.'
+  );
+  assert.equal(parsed.clinicalAxes.prostateVolumeClass, 'high_volume_chaarted');
+  assert.ok(parsed.diseaseSettingIds.includes('cspc_high_volume_chaarted'));
+
+  result = runQuery(
+    trials,
+    'Male with mCSPC, 3 bone metastases, no visceral disease. No prior docetaxel. ADT-naive.'
+  );
+  assert.equal(findEntry(result, 'triplet'), undefined, 'Low-volume mCSPC should not match high-volume-only cohorts.');
+
+  result = runQuery(
+    trials,
+    'Male with mCSPC prostate cancer. BRCA2 mutation. ADT-naive.'
+  );
+  assert.equal(findEntry(result, 'brca2-mcspc').match.badge, 'Strong match');
+
+  result = runQuery(
+    trials,
+    'Male with mCSPC prostate cancer. ATM mutation. ADT-naive.'
+  );
+  assert.equal(findEntry(result, 'brca2-mcspc'), undefined, 'ATM-mutated disease should not strongly match BRCA2-specific mCSPC cohorts.');
+
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide.'
@@ -634,7 +705,7 @@ function testProstate() {
     'Male, 65. mCRPC. Received docetaxel. Progressed on enzalutamide.'
   );
   assert.equal(findEntry(result, 'post-enza-docetaxel').match.badge, 'Possible match');
-  assert.deepEqual(flagCodes(findEntry(result, 'post-enza-docetaxel')), ['therapy_sequence']);
+  assert.deepEqual(flagCodes(findEntry(result, 'post-enza-docetaxel')), ['taxane_setting_needed', 'therapy_sequence']);
   assert.equal(findEntry(result, 'post-enza-docetaxel-allowed').match.badge, 'Strong match');
 
   result = runQuery(
@@ -748,6 +819,13 @@ function testBladder() {
 
   result = runQuery(
     trials,
+    'Bladder cancer, NMIBC with CIS after BCG failure.'
+  );
+  assert.equal(findEntry(result, 'nmibc-bcg').match.badge, 'Possible match');
+  assert.deepEqual(flagCodes(findEntry(result, 'nmibc-bcg')), ['bcg_adequacy_timing_needed']);
+
+  result = runQuery(
+    trials,
     'Metastatic urothelial carcinoma, first-line.'
   );
   assert.equal(findEntry(result, 'muc-1l-cis-ineligible').match.badge, 'Possible match');
@@ -768,10 +846,35 @@ function testBladder() {
 
   result = runQuery(
     trials,
+    'Metastatic urothelial carcinoma after prior platinum. FGFR alteration.'
+  );
+  assert.equal(findEntry(result, 'muc-fgfr3').match.badge, 'Possible match');
+  assert.deepEqual(flagCodes(findEntry(result, 'muc-fgfr3')), ['fgfr3_specificity_needed']);
+
+  result = runQuery(
+    trials,
+    'Metastatic urothelial carcinoma after prior platinum. FGFR2 fusion.'
+  );
+  assert.equal(findEntry(result, 'muc-fgfr3'), undefined, 'FGFR2-only disease should not match FGFR3-specific cohorts.');
+
+  result = runQuery(
+    trials,
     'Metastatic urothelial carcinoma after prior platinum.'
   );
   assert.equal(findEntry(result, 'muc-fgfr3').match.badge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'muc-fgfr3')), ['fgfr3_status']);
+
+  result = runQuery(
+    trials,
+    'Metastatic urothelial carcinoma stable after gem/carbo first-line platinum.'
+  );
+  assert.equal(findEntry(result, 'muc-maintenance').match.badge, 'Strong match');
+
+  result = runQuery(
+    trials,
+    'Metastatic urothelial carcinoma progressed after gem/cis first-line platinum.'
+  );
+  assert.equal(findEntry(result, 'muc-maintenance'), undefined, 'Maintenance cohorts should exclude known post-platinum progression.');
 
   result = runQuery(
     trials,
@@ -842,6 +945,18 @@ function testKidney() {
   );
   assert.equal(findEntry(result, 'medullary-met').match.badge, 'Strong match');
   assert.equal(findEntry(result, 'chromophobe-met'), undefined);
+
+  result = runQuery(
+    trials,
+    'Metastatic clear-cell RCC progressed after pembrolizumab/axitinib.'
+  );
+  assert.equal(findEntry(result, 'ccrcc-belzutifan-sequence').match.badge, 'Strong match');
+
+  result = runQuery(
+    trials,
+    'Metastatic clear-cell RCC after nivolumab, no prior VEGF-TKI.'
+  );
+  assert.equal(findEntry(result, 'ccrcc-belzutifan-sequence'), undefined, 'Belzutifan-sequence cohorts should not match when VEGF-TKI exposure is explicitly absent.');
 }
 
 function testTesticular() {
@@ -864,9 +979,10 @@ function testTesticular() {
   assert.equal(parsed.clinicalAxes.igcccgRisk, 'poor');
 
   parsed = PatientQueryParser.parse(
-    'NSGCT after first-line BEP with residual mass after chemotherapy, markers normal.'
+    'NSGCT after first-line BEP with 2 cm residual mass after chemotherapy, markers normal.'
   );
   assert.equal(parsed.diseaseGroup, 'post_first_line');
+  assert.equal(parsed.clinicalAxes.gctResidualMassSizeCm, '2');
   assert.ok(parsed.diseaseSettingIds.includes('nsgct_post_first_line'));
 
   let result = runQuery(
@@ -904,10 +1020,17 @@ function testTesticular() {
 
   result = runQuery(
     trials,
-    'NSGCT after first-line BEP with residual mass after chemotherapy, markers normal.'
+    'NSGCT after first-line BEP with 2 cm residual mass after chemotherapy, markers normal.'
   );
   assert.equal(findEntry(result, 'nsgct-post1l').match.badge, 'Strong match');
   assert.equal(findEntry(result, 'nsgct-2l'), undefined);
+
+  result = runQuery(
+    trials,
+    'NSGCT after first-line BEP with residual mass after chemotherapy, markers normal.'
+  );
+  assert.equal(findEntry(result, 'nsgct-post1l').match.badge, 'Possible match');
+  assert.deepEqual(flagCodes(findEntry(result, 'nsgct-post1l')), ['gct_residual_mass_size_needed']);
 
   result = runQuery(
     trials,
