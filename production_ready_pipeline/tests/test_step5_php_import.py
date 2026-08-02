@@ -54,8 +54,16 @@ def test_php_import_roundtrip() -> None:
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
         )
+
+        check(
+            result.returncode == 0,
+            "PHP importer exits successfully"
+            + (f" ({result.stderr.strip()})" if result.returncode else ""),
+        )
+        if result.returncode != 0:
+            return
 
         check(imported_catalog_path.exists(), "PHP importer writes the catalog file")
         check("Imported website catalog into" in result.stdout, "PHP importer reports success")
@@ -66,8 +74,8 @@ def test_php_import_roundtrip() -> None:
         first_trial = trials[0] if trials else {}
 
         check(metadata.get("trialCount") == 1, "Imported catalog metadata preserves trial count")
-        check(first_trial.get("diseaseSettingPrimaryId") == "crpc_metastatic_postARPI", "PHP importer preserves primary disease-setting id")
-        check(first_trial.get("diseaseSettingAllIds") == ["crpc_metastatic_postARPI", "crpc_general"], "PHP importer preserves disease-setting ids")
+        check(first_trial.get("diseaseSettingPrimaryId") == "crpc_metastatic_postarpi", "PHP importer preserves primary disease-setting id")
+        check(first_trial.get("diseaseSettingAllIds") == ["crpc_metastatic_postarpi", "crpc_general"], "PHP importer preserves disease-setting ids")
         check(first_trial.get("classificationEvidence") == ["mCRPC", "BRCA2", "post-enzalutamide"], "PHP importer preserves classification evidence")
         check(first_trial.get("clinicalAxes", {}).get("priorArpi") == "yes", "PHP importer preserves clinical axes")
         check(first_trial.get("sourceTags", {}).get("diseaseSettingPrimary") == "NCCN-inferred", "PHP importer preserves source tags")

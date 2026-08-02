@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/patient-fact.schema.json",
+  "title": "Confirmed patient fact set",
+  "type": "object",
+  "required": ["schemaVersion", "patientVersion", "facts", "contradictions"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "patientVersion": { "type": "string", "minLength": 1 },
+    "facts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/fact" }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["contradictionId", "positiveFactIds", "negativeFactIds", "status"],
+        "properties": {
+          "contradictionId": { "type": "string" },
+          "positiveFactIds": { "type": "array", "items": { "type": "string" } },
+          "negativeFactIds": { "type": "array", "items": { "type": "string" } },
+          "status": { "enum": ["requires_confirmation", "resolved"] }
+        },
+        "additionalProperties": true
+      }
+    },
+    "ignoredText": { "type": "array" },
+    "directIdentifierWarnings": { "type": "array" }
+  },
+  "$defs": {
+    "sourceSpan": {
+      "type": "object",
+      "required": ["field", "text", "start", "end"],
+      "properties": {
+        "field": { "type": "string" },
+        "text": { "type": "string" },
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "fact": {
+      "type": "object",
+      "required": ["factId", "concept", "predicate", "assertion", "status", "sourceSpan", "extractor", "confirmation"],
+      "properties": {
+        "factId": { "type": "string", "minLength": 1 },
+        "concept": {
+          "type": "object",
+          "required": ["system", "code", "display"],
+          "properties": {
+            "system": { "type": "string" },
+            "code": { "type": "string" },
+            "display": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "predicate": { "type": "string" },
+        "value": {},
+        "unit": { "type": ["string", "null"] },
+        "observedAt": { "type": ["string", "null"], "format": "date-time" },
+        "normalization": { "type": ["string", "null"] },
+        "assertion": { "enum": ["present", "absent", "possible", "conditional", "hypothetical", "positive", "negative"] },
+        "status": { "enum": ["current", "historical", "planned", "resolved", "unknown"] },
+        "temporality": { "type": "object" },
+        "experiencer": { "enum": ["patient", "family_member", "donor", "other"] },
+        "sourceSpan": { "$ref": "#/$defs/sourceSpan" },
+        "sourceType": { "type": "string" },
+        "extractor": {
+          "type": "object",
+          "required": ["type", "version"],
+          "properties": {
+            "type": { "enum": ["rule", "nlp", "llm", "manual", "ehr"] },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "extractionConfidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "confirmation": { "enum": ["unreviewed", "confirmed", "corrected", "rejected"] },
+        "supersedes": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

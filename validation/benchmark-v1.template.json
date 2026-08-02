@@ -1,0 +1,10 @@
+{
+  "benchmarkVersion": "gu-prescreen-benchmark-1.0.0",
+  "trialSnapshot": "REPLACE_WITH_IMMUTABLE_SNAPSHOT_ID",
+  "annotationManualVersion": "1.0.0",
+  "interRaterAgreement": null,
+  "maximumRegistryIngestionHours": null,
+  "sentinelFailures": 0,
+  "worklist": [],
+  "cases": []
+}

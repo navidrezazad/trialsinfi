@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GU Trial Prescreen Benchmark Annotation</title>
+  <style>
+    :root { font-family: Inter, system-ui, sans-serif; color: #172033; background: #f4f6fa; }
+    body { margin: 0; }
+    main { max-width: 1180px; margin: 0 auto; padding: 2rem; }
+    h1 { margin-bottom: .35rem; }
+    .warning { background: #fff5d6; border: 1px solid #e5b94c; border-radius: 10px; padding: .8rem 1rem; }
+    .toolbar, .grid, .panel { display: grid; gap: 1rem; }
+    .toolbar { grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); margin: 1rem 0; }
+    .grid { grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
+    .panel { background: white; border: 1px solid #dce2ec; border-radius: 14px; padding: 1rem; box-shadow: 0 4px 18px rgba(25,36,56,.06); }
+    label { display: grid; gap: .35rem; font-weight: 650; }
+    select, textarea, button, input { font: inherit; padding: .65rem; border: 1px solid #bbc5d5; border-radius: 8px; }
+    textarea { min-height: 170px; resize: vertical; font-family: ui-monospace, monospace; font-size: .85rem; }
+    button { cursor: pointer; background: #174ea6; color: white; border: 0; }
+    button.secondary { background: #596579; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .case-text { white-space: pre-wrap; line-height: 1.55; background: #f8f9fc; padding: .8rem; border-radius: 8px; }
+    .disagreement { color: #a33222; font-weight: 700; }
+    .agreement { color: #236a3b; font-weight: 700; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Clinician benchmark annotation</h1>
+  <p class="warning">Use only governance-approved, de-identified benchmark material. This tool makes no network requests and stores nothing in localStorage; export before closing.</p>
+  <div class="toolbar">
+    <label>Import benchmark JSON<input id="benchmarkFile" type="file" accept="application/json,.json"></label>
+    <label>Role<select id="annotationRole"><option value="reviewerA">Independent reviewer A</option><option value="reviewerB">Independent reviewer B</option><option value="adjudicator">Adjudicator</option></select></label>
+    <label>Pseudonymous reviewer ID<input id="reviewerId" autocomplete="off" placeholder="reviewer-001"></label>
+    <label>Case/cohort pair<select id="pairSelect" disabled></select></label>
+    <button id="previousPair" class="secondary" disabled>Previous</button>
+    <button id="nextPair" class="secondary" disabled>Next</button>
+    <button id="savePair" disabled>Save current</button>
+    <button id="exportAnnotations" disabled>Export annotations</button>
+  </div>
+  <section class="panel">
+    <strong id="pairTitle">No benchmark loaded</strong>
+    <div id="patientText" class="case-text">Import a versioned benchmark worklist.</div>
+    <div id="protocolText" class="case-text"></div>
+  </section>
+  <div class="grid" style="margin-top:1rem">
+    <section class="panel" id="reviewerAPanel">
+      <h2>Independent reviewer A</h2>
+      <label>Cohort relevance<select id="reviewerA"></select></label>
+      <label>Criterion annotations (JSON array)<textarea id="criteriaA">[]</textarea></label>
+    </section>
+    <section class="panel" id="reviewerBPanel" hidden>
+      <h2>Independent reviewer B</h2>
+      <label>Cohort relevance<select id="reviewerB"></select></label>
+      <label>Criterion annotations (JSON array)<textarea id="criteriaB">[]</textarea></label>
+    </section>
+    <section class="panel" id="adjudicationPanel" hidden>
+      <h2>Adjudication</h2>
+      <div id="agreementState">Awaiting two independent labels.</div>
+      <label>Final relevance<select id="adjudicated"></select></label>
+      <label>Adjudication rationale<textarea id="rationale"></textarea></label>
+      <label>Final criterion annotations (JSON array)<textarea id="criteriaFinal">[]</textarea></label>
+    </section>
+  </div>
+</main>
+<script src="annotation-tool.js"></script>
+</body>
+</html>

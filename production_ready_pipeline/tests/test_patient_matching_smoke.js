@@ -30,14 +30,30 @@ function buildTrial(overrides = {}) {
 }
 
 function findEntry(result, trialId) {
-  return [
-    ...(result.strongMatches || []),
-    ...(result.possibleMatches || [])
-  ].find(entry => entry.trial.id === trialId);
+  return (result.evaluatedCohorts || [])
+    .filter(entry => entry.match.legacyIncluded)
+    .find(entry => entry.trial.id === trialId);
 }
 
 function flagCodes(entry) {
-  return (entry?.match?.flags || []).map(flag => flag.code).sort();
+  const administrative = new Set([
+    'patient_fact_confirmation',
+    'trial_data_incomplete',
+    'disease_setting_review',
+    'phase_preference'
+  ]);
+  return (entry?.match?.flags || [])
+    .map(flag => flag.code)
+    .filter(code => !administrative.has(code))
+    .sort();
+}
+
+function legacyStrongEntries(result) {
+  return (result.evaluatedCohorts || []).filter(entry => entry.match.legacyIncluded && entry.match.legacyBadge === 'Strong match');
+}
+
+function legacyPossibleEntries(result) {
+  return (result.evaluatedCohorts || []).filter(entry => entry.match.legacyIncluded && entry.match.legacyBadge === 'Possible match');
 }
 
 function runQuery(trials, query) {
@@ -52,8 +68,8 @@ function buildProstateTrials() {
     title: '177Lu-PSMA Radioligand Study',
     description: 'PSMA radioligand treatment for metastatic castration-resistant prostate cancer.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -71,8 +87,8 @@ function buildProstateTrials() {
     title: 'PARP Trial for BRCA/HRR Positive mCRPC',
     description: 'Olaparib-based treatment for biomarker-selected metastatic castration-resistant prostate cancer.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -140,8 +156,8 @@ function buildProstateTrials() {
     title: 'mCRPC Trial With Standard Screening Gates',
     description: 'Metastatic castration-resistant prostate cancer study.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -157,8 +173,8 @@ function buildProstateTrials() {
     title: 'mCRPC Trial After ADT, Enzalutamide, and Docetaxel',
     description: 'Later-line study for metastatic castration-resistant prostate cancer after defined prior therapy progression.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -174,8 +190,8 @@ function buildProstateTrials() {
     title: 'Generic Post-ARPI mCRPC Trial',
     description: 'Study for metastatic castration-resistant prostate cancer after enzalutamide.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -190,8 +206,8 @@ function buildProstateTrials() {
     title: 'Class-Level Post-ARPI mCRPC Trial',
     description: 'Study for metastatic castration-resistant prostate cancer after progression on any ARPI.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -206,8 +222,8 @@ function buildProstateTrials() {
     title: 'Exact Post-Abiraterone mCRPC Trial',
     description: 'Study for metastatic castration-resistant prostate cancer after abiraterone progression.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -222,8 +238,8 @@ function buildProstateTrials() {
     title: 'mCRPC Trial After Enzalutamide and Docetaxel',
     description: 'Study for metastatic castration-resistant prostate cancer after progression on enzalutamide and docetaxel.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -239,8 +255,8 @@ function buildProstateTrials() {
     title: 'mCRPC Trial After Enzalutamide',
     description: 'Study for metastatic castration-resistant prostate cancer after enzalutamide progression.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -256,8 +272,8 @@ function buildProstateTrials() {
     title: 'mCRPC Trial After Enzalutamide and Docetaxel',
     description: 'Study for metastatic castration-resistant prostate cancer after defined prior therapy progression.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'castration_resistant',
       metastaticStatus: 'metastatic',
@@ -290,8 +306,8 @@ function buildProstateTrials() {
     title: 'Localized Prostatectomy Trial',
     description: 'Study for men undergoing radical prostatectomy after biopsy-proven localized prostate cancer.',
     cancerType: 'Prostate',
-    diseaseSettingPrimaryId: 'crpc_metastatic_postARPI',
-    diseaseSettingAllIds: ['crpc_metastatic_postARPI', 'crpc_general'],
+    diseaseSettingPrimaryId: 'crpc_metastatic_postarpi',
+    diseaseSettingAllIds: ['crpc_metastatic_postarpi', 'crpc_general'],
     clinicalAxes: {
       castrationStatus: 'unknown',
       metastaticStatus: 'unknown'
@@ -614,7 +630,7 @@ function testProstate() {
     'Male, 65. mCRPC. Progressed on enzalutamide. BRCA2+. PSMA-positive PET. No prior docetaxel.'
   );
   assert.deepEqual(
-    result.strongMatches.map(entry => entry.trial.id).sort(),
+    legacyStrongEntries(result).map(entry => entry.trial.id).sort(),
     ['parp', 'post-arpi-class', 'post-arpi-generic', 'post-enza-docetaxel-allowed', 'radioligand'],
     'Full biomarker-complete mCRPC query should strongly match radioligand, PARP, and the ARPI-directed later-line cohorts that do not prohibit prior docetaxel.'
   );
@@ -623,44 +639,44 @@ function testProstate() {
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide. PSMA-positive PET. No prior docetaxel.'
   );
-  assert.equal(findEntry(result, 'radioligand').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'parp').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'radioligand').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'parp').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'parp')), ['brca_hrr']);
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide. BRCA2+. No prior docetaxel.'
   );
-  assert.equal(findEntry(result, 'parp').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'radioligand').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'parp').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'radioligand').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'radioligand')), ['psma_status']);
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide. BRCA2+. No prior docetaxel. Last systemic therapy 10 days ago.'
   );
-  assert.equal(findEntry(result, 'parp').match.badge, 'Possible match');
-  assert.deepEqual(flagCodes(findEntry(result, 'parp')), ['washout_window']);
+  assert.equal(findEntry(result, 'parp').match.legacyBadge, 'Strong match');
+  assert.deepEqual(flagCodes(findEntry(result, 'parp')), [], 'A patient-side date alone must not invent a protocol washout requirement.');
 
   result = runQuery(
     trials,
     'Man with unfavorable intermediate-risk localized prostate cancer considering radiation. Phase III only.'
   );
-  assert.equal(findEntry(result, 'classifier').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'classifier').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'classifier')), ['genomic_classifier']);
 
   result = runQuery(
     trials,
     'Male with mCSPC high-volume prostate cancer. No prior docetaxel.'
   );
-  assert.equal(findEntry(result, 'triplet').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'triplet').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'triplet')), ['adt_history']);
 
   parsed = PatientQueryParser.parse(
     'Male with de novo mCSPC, 4 bone metastases including one rib lesion, no visceral disease. No prior docetaxel.'
   );
   assert.equal(parsed.clinicalAxes.prostateVolumeClass, 'high_volume_chaarted');
-  assert.ok(parsed.diseaseSettingIds.includes('cspc_high_volume_chaarted'));
+  assert.ok(parsed.diseaseSettingIds.includes('cspc_high_volume'));
 
   result = runQuery(
     trials,
@@ -672,7 +688,7 @@ function testProstate() {
     trials,
     'Male with mCSPC prostate cancer. BRCA2 mutation. ADT-naive.'
   );
-  assert.equal(findEntry(result, 'brca2-mcspc').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'brca2-mcspc').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
@@ -684,42 +700,42 @@ function testProstate() {
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide.'
   );
-  assert.equal(findEntry(result, 'screening-gated').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'screening-gated').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'screening-gated')), ['ecog_status', 'lab_organ_function', 'washout_window']);
-  assert.equal(findEntry(result, 'post-arpi-generic').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'post-arpi-class').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'post-arpi-generic').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'post-arpi-class').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'post-abiraterone-exact'), undefined);
-  assert.equal(findEntry(result, 'general-crpc').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'general-crpc').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'general-crpc')), ['therapy_sequence']);
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on abiraterone.'
   );
-  assert.equal(findEntry(result, 'post-abiraterone-exact').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'post-arpi-class').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'post-abiraterone-exact').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'post-arpi-class').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'post-arpi-generic'), undefined, 'Exact enzalutamide-only trials should not strongly match abiraterone progression queries.');
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Received docetaxel. Progressed on enzalutamide.'
   );
-  assert.equal(findEntry(result, 'post-enza-docetaxel').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'post-enza-docetaxel').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'post-enza-docetaxel')), ['taxane_setting_needed', 'therapy_sequence']);
-  assert.equal(findEntry(result, 'post-enza-docetaxel-allowed').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'post-enza-docetaxel-allowed').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide and docetaxel.'
   );
-  assert.equal(findEntry(result, 'post-enza-docetaxel').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'post-enza-docetaxel-no-cabazitaxel').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'post-enza-docetaxel').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'post-enza-docetaxel-no-cabazitaxel').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide and docetaxel and cabazitaxel.'
   );
-  assert.equal(findEntry(result, 'post-enza-docetaxel').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'post-enza-docetaxel').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'post-enza-docetaxel')), ['therapy_sequence']);
   assert.equal(findEntry(result, 'post-enza-docetaxel-no-cabazitaxel'), undefined, 'Trials excluding prior cabazitaxel should not match patients who already received it.');
 
@@ -727,14 +743,15 @@ function testProstate() {
     trials,
     'Male, 65. mCRPC. Currently on enzalutamide.'
   );
-  assert.equal(findEntry(result, 'post-arpi-generic').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'post-arpi-generic').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'post-arpi-generic')), ['therapy_sequence']);
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on enzalutamide. ECOG 1. Labs normal. Adequate organ function. Last systemic therapy 21 days ago.'
   );
-  assert.equal(findEntry(result, 'screening-gated').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'screening-gated').match.legacyBadge, 'Possible match');
+  assert.deepEqual(flagCodes(findEntry(result, 'screening-gated')), ['lab_organ_function'], 'Generic normal labs must not satisfy numeric protocol criteria.');
 
   result = runQuery(
     trials,
@@ -746,15 +763,15 @@ function testProstate() {
     trials,
     'Male, 65. mCRPC.'
   );
-  assert.ok(result.possibleMatches.length >= 2, 'Broad mCRPC query should still surface possible matches.');
+  assert.ok(legacyPossibleEntries(result).length >= 2, 'Broad mCRPC query should still surface possible matches.');
   assert.equal(findEntry(result, 'misclassified-localized'), undefined, 'Localized prostatectomy studies should not surface for advanced prostate queries.');
 
   result = runQuery(
     trials,
     'Male, 65. mCRPC. Progressed on ADT and enzalutamide and docetaxel.'
   );
-  assert.equal(findEntry(result, 'post-triplet-sequence').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'post-arpi-generic').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'post-triplet-sequence').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'post-arpi-generic').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'post-arpi-generic')), ['therapy_sequence']);
   assert.equal(findEntry(result, 'radioligand'), undefined, 'Docetaxel-treated patient should not match a docetaxel-naive radioligand cohort.');
   assert.equal(findEntry(result, 'parp'), undefined, 'Docetaxel-treated patient should not match a docetaxel-naive PARP cohort.');
@@ -799,7 +816,10 @@ function testProstate() {
     degradedLocalizedTrial,
     PatientQueryParser.parse('mCRPC. Progressed on enzalutamide.')
   );
-  assert.equal(degradedLocalizedResult.included, false, 'Localized prostate trials should be excluded from advanced prostate queries even when structured fields are missing.');
+  assert.equal(degradedLocalizedResult.included, true, 'Potential conflicts must remain visible for audit.');
+  assert.equal(degradedLocalizedResult.reviewTier, 'MODELED_CONFLICT');
+  assert.equal(degradedLocalizedResult.hardExcluded, false, 'Unreviewed legacy rules may not authorize hard exclusion.');
+  assert.deepEqual(degradedLocalizedResult.potentialConflicts, ['staging']);
 }
 
 function testBladder() {
@@ -809,7 +829,7 @@ function testBladder() {
     trials,
     'Bladder cancer, BCG-unresponsive NMIBC with CIS after adequate BCG.'
   );
-  assert.equal(findEntry(result, 'nmibc-bcg').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'nmibc-bcg').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
@@ -821,34 +841,34 @@ function testBladder() {
     trials,
     'Bladder cancer, NMIBC with CIS after BCG failure.'
   );
-  assert.equal(findEntry(result, 'nmibc-bcg').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'nmibc-bcg').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'nmibc-bcg')), ['bcg_adequacy_timing_needed']);
 
   result = runQuery(
     trials,
     'Metastatic urothelial carcinoma, first-line.'
   );
-  assert.equal(findEntry(result, 'muc-1l-cis-ineligible').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'muc-1l-cis-ineligible').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'muc-1l-cis-ineligible')), ['cisplatin_eligibility']);
 
   result = runQuery(
     trials,
     'Metastatic urothelial carcinoma, cisplatin-ineligible, first-line.'
   );
-  assert.equal(findEntry(result, 'muc-1l-cis-ineligible').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'muc-1l-cis-ineligible').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'muc-2l'), undefined, 'First-line metastatic query should exclude 2L bladder trials.');
 
   result = runQuery(
     trials,
     'Metastatic urothelial carcinoma after prior platinum. FGFR3 mutation.'
   );
-  assert.equal(findEntry(result, 'muc-fgfr3').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'muc-fgfr3').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Metastatic urothelial carcinoma after prior platinum. FGFR alteration.'
   );
-  assert.equal(findEntry(result, 'muc-fgfr3').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'muc-fgfr3').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'muc-fgfr3')), ['fgfr3_specificity_needed']);
 
   result = runQuery(
@@ -861,14 +881,14 @@ function testBladder() {
     trials,
     'Metastatic urothelial carcinoma after prior platinum.'
   );
-  assert.equal(findEntry(result, 'muc-fgfr3').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'muc-fgfr3').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'muc-fgfr3')), ['fgfr3_status']);
 
   result = runQuery(
     trials,
     'Metastatic urothelial carcinoma stable after gem/carbo first-line platinum.'
   );
-  assert.equal(findEntry(result, 'muc-maintenance').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'muc-maintenance').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
@@ -880,7 +900,7 @@ function testBladder() {
     trials,
     'Metastatic urothelial carcinoma after prior platinum. HER2 IHC 3+.'
   );
-  assert.equal(findEntry(result, 'muc-her2').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'muc-her2').match.legacyBadge, 'Strong match');
 }
 
 function testKidney() {
@@ -899,7 +919,7 @@ function testKidney() {
     trials,
     'Metastatic clear-cell RCC, IMDC intermediate risk, treatment-naive, no prior IO, no prior VEGF-TKI, prior nephrectomy, sarcomatoid.'
   );
-  assert.equal(findEntry(result, 'ccrcc-1l').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'ccrcc-1l').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'papillary-met'), undefined);
   assert.equal(findEntry(result, 'chromophobe-met'), undefined);
 
@@ -907,50 +927,50 @@ function testKidney() {
     trials,
     'Metastatic clear-cell RCC, treatment-naive, no prior IO, no prior VEGF-TKI, prior nephrectomy, sarcomatoid.'
   );
-  assert.equal(findEntry(result, 'ccrcc-1l').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'ccrcc-1l').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'ccrcc-1l')), ['imdc_risk']);
 
   result = runQuery(
     trials,
     'Metastatic papillary type 2 RCC, MET mutation, treatment-naive.'
   );
-  assert.equal(findEntry(result, 'papillary-met').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'papillary-met').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Metastatic papillary RCC, MET mutation, treatment-naive.'
   );
-  assert.equal(findEntry(result, 'papillary-met').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'papillary-met').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'papillary-met')), ['histology']);
 
   result = runQuery(
     trials,
     'Metastatic chromophobe RCC, treatment-naive.'
   );
-  assert.equal(findEntry(result, 'chromophobe-met').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'chromophobe-met').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'papillary-met'), undefined);
-  assert.equal(findEntry(result, 'nccrcc-basket').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'nccrcc-basket').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Metastatic non-clear-cell RCC, treatment-naive.'
   );
-  assert.equal(findEntry(result, 'nccrcc-basket').match.badge, 'Strong match');
-  assert.equal(findEntry(result, 'chromophobe-met').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'nccrcc-basket').match.legacyBadge, 'Strong match');
+  assert.equal(findEntry(result, 'chromophobe-met').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'chromophobe-met')), ['histology']);
 
   result = runQuery(
     trials,
     'Metastatic renal medullary carcinoma, treatment-naive.'
   );
-  assert.equal(findEntry(result, 'medullary-met').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'medullary-met').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'chromophobe-met'), undefined);
 
   result = runQuery(
     trials,
     'Metastatic clear-cell RCC progressed after pembrolizumab/axitinib.'
   );
-  assert.equal(findEntry(result, 'ccrcc-belzutifan-sequence').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'ccrcc-belzutifan-sequence').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
@@ -989,67 +1009,67 @@ function testTesticular() {
     trials,
     'Seminoma stage I after orchiectomy, no prior chemotherapy, markers normal.'
   );
-  assert.equal(findEntry(result, 'seminoma-stage1').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'seminoma-stage1').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Seminoma stage I after orchiectomy, no prior chemotherapy.'
   );
-  assert.equal(findEntry(result, 'seminoma-stage1').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'seminoma-stage1').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'seminoma-stage1')), ['marker_status']);
 
   result = runQuery(
     trials,
     'Relapsed NSGCT after first-line BEP, no prior HDCT.'
   );
-  assert.equal(findEntry(result, 'nsgct-2l').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'nsgct-2l').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Relapsed NSGCT after first-line BEP.'
   );
-  assert.equal(findEntry(result, 'nsgct-2l').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'nsgct-2l').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'nsgct-2l')), ['hdct_history']);
 
   result = runQuery(
     trials,
     'NSGCT with AFP elevated after orchiectomy and no prior chemotherapy.'
   );
-  assert.equal(findEntry(result, 'nsgct-stage-is').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'nsgct-stage-is').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'seminoma-stage1'), undefined);
 
   result = runQuery(
     trials,
     'NSGCT after first-line BEP with 2 cm residual mass after chemotherapy, markers normal.'
   );
-  assert.equal(findEntry(result, 'nsgct-post1l').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'nsgct-post1l').match.legacyBadge, 'Strong match');
   assert.equal(findEntry(result, 'nsgct-2l'), undefined);
 
   result = runQuery(
     trials,
     'NSGCT after first-line BEP with residual mass after chemotherapy, markers normal.'
   );
-  assert.equal(findEntry(result, 'nsgct-post1l').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'nsgct-post1l').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'nsgct-post1l')), ['gct_residual_mass_size_needed']);
 
   result = runQuery(
     trials,
     'Primary mediastinal NSGCT, advanced disease, no prior chemotherapy.'
   );
-  assert.equal(findEntry(result, 'mediastinal-poor').match.badge, 'Strong match');
+  assert.equal(findEntry(result, 'mediastinal-poor').match.legacyBadge, 'Strong match');
 
   result = runQuery(
     trials,
     'Primary mediastinal NSGCT, advanced disease.'
   );
-  assert.equal(findEntry(result, 'mediastinal-poor').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'mediastinal-poor').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'mediastinal-poor')), ['chemo_lines']);
 
   result = runQuery(
     trials,
     'Extragonadal NSGCT, advanced disease.'
   );
-  assert.equal(findEntry(result, 'mediastinal-poor').match.badge, 'Possible match');
+  assert.equal(findEntry(result, 'mediastinal-poor').match.legacyBadge, 'Possible match');
   assert.deepEqual(flagCodes(findEntry(result, 'mediastinal-poor')), ['chemo_lines', 'igcccg_risk', 'primary_site']);
 }
 

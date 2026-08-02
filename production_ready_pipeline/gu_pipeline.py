@@ -58,6 +58,10 @@ def _classify_records(study_records: list[dict], site_rows: list[dict]) -> None:
         record["Disease setting (all)"] = classification.disease_setting_all
         record["Disease setting IDs (all)"] = " | ".join(classification.disease_setting_ids)
         record["Classification confidence"] = classification.classification_confidence
+        record["Classification evidence strength"] = classification.classification_evidence_strength
+        record["Classification is probability"] = classification.classification_is_probability
+        record["Classification method"] = classification.classification_method
+        record["Classification field evidence"] = classification.classification_field_evidence
         record["Classification evidence"] = " | ".join(classification.classification_evidence)
         record["BCG status"] = classification.bcg_status
         record["Cisplatin status"] = classification.cisplatin_status

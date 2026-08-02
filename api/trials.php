@@ -19,6 +19,33 @@ function cts_prepare_trial_for_save(array $trialPayload): array
     return $trial;
 }
 
+/**
+ * Stream the large public catalog one trial at a time. Encoding the complete
+ * response into one string temporarily duplicates tens of megabytes and can
+ * exhaust a standard 128 MB PHP worker after cohort criteria are normalized.
+ */
+function cts_stream_trials_catalog_response(array $trials, array $metadata): void
+{
+    http_response_code(200);
+    echo '{"success":true,"trials":[';
+    foreach ($trials as $index => $trial) {
+        if ($index > 0) {
+            echo ',';
+        }
+        $encodedTrial = json_encode($trial, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($encodedTrial === false) {
+            throw new RuntimeException('Unable to encode trial catalog response.');
+        }
+        echo $encodedTrial;
+    }
+    $encodedMetadata = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($encodedMetadata === false) {
+        throw new RuntimeException('Unable to encode trial catalog metadata.');
+    }
+    echo '],"metadata":' . $encodedMetadata . ',"count":' . count($trials) . '}';
+    exit;
+}
+
 function cts_handle_bulk_replace(PDO $pdo, array $rows, array $actor): void
 {
     if (empty($rows)) {
@@ -28,8 +55,9 @@ function cts_handle_bulk_replace(PDO $pdo, array $rows, array $actor): void
         ], 400);
     }
 
-    $existingTrials = cts_load_trials_catalog();
-    $existingMetadata = cts_load_trials_metadata();
+    $existingPayload = cts_load_trials_payload();
+    $existingTrials = $existingPayload['trials'] ?? [];
+    $existingMetadata = $existingPayload['metadata'] ?? [];
     $replacementTrials = [];
     $errors = [];
 
@@ -168,8 +196,8 @@ function cts_handle_bulk_replace(PDO $pdo, array $rows, array $actor): void
         'deletedForumReplies' => $deletedForumReplies,
         'errorCount' => 0,
         'errors' => [],
-        'metadata' => cts_load_trials_metadata(),
-        'trials' => cts_load_trials_catalog()
+        'metadata' => $existingMetadata,
+        'trials' => $replacementTrials
     ]);
 }
 
@@ -181,14 +209,10 @@ try {
         header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
         header('Pragma: no-cache');
         header('Expires: 0');
-        $trials = cts_load_trials_catalog();
-        $metadata = cts_load_trials_metadata();
-        cts_json_response([
-            'success' => true,
-            'trials' => $trials,
-            'metadata' => $metadata,
-            'count' => count($trials)
-        ]);
+        $catalog = cts_load_trials_payload();
+        $trials = $catalog['trials'] ?? [];
+        $metadata = $catalog['metadata'] ?? [];
+        cts_stream_trials_catalog_response($trials, $metadata);
     }
 
     $actor = cts_require_role($cts_pdo, 'admin');
@@ -218,9 +242,11 @@ try {
             ], 400);
         }
 
-        $trials = cts_load_trials_catalog();
+        $catalog = cts_load_trials_payload();
+        $trials = $catalog['trials'] ?? [];
+        $metadata = $catalog['metadata'] ?? [];
         $trials[] = $trial;
-        cts_write_trials_catalog($trials, cts_load_trials_metadata());
+        cts_write_trials_catalog($trials, $metadata);
 
         cts_audit_log($cts_pdo, 'trial_created', 'trial', $trial['id'], [
             'title' => $trial['title']
@@ -230,7 +256,7 @@ try {
             'success' => true,
             'message' => 'Trial created successfully.',
             'trial' => $trial,
-            'metadata' => cts_load_trials_metadata()
+            'metadata' => $metadata
         ], 201);
     }
 
@@ -245,7 +271,9 @@ try {
             ], 400);
         }
 
-        $trials = cts_load_trials_catalog();
+        $catalog = cts_load_trials_payload();
+        $trials = $catalog['trials'] ?? [];
+        $metadata = $catalog['metadata'] ?? [];
         $trialIndex = cts_find_trial_index_by_id($trials, $trialId);
         if ($trialIndex === -1) {
             cts_json_response([
@@ -269,7 +297,7 @@ try {
         }
 
         $trials[$trialIndex] = $updatedTrial;
-        cts_write_trials_catalog($trials, cts_load_trials_metadata());
+        cts_write_trials_catalog($trials, $metadata);
 
         cts_audit_log($cts_pdo, 'trial_updated', 'trial', $trialId, [
             'title' => $updatedTrial['title']
@@ -279,7 +307,7 @@ try {
             'success' => true,
             'message' => 'Trial updated successfully.',
             'trial' => $updatedTrial,
-            'metadata' => cts_load_trials_metadata()
+            'metadata' => $metadata
         ]);
     }
 
@@ -292,7 +320,9 @@ try {
             ], 400);
         }
 
-        $trials = cts_load_trials_catalog();
+        $catalog = cts_load_trials_payload();
+        $trials = $catalog['trials'] ?? [];
+        $metadata = $catalog['metadata'] ?? [];
         $trialIndex = cts_find_trial_index_by_id($trials, $trialId);
         if ($trialIndex === -1) {
             cts_json_response([
@@ -303,7 +333,7 @@ try {
 
         $deletedTrial = $trials[$trialIndex];
         array_splice($trials, $trialIndex, 1);
-        cts_write_trials_catalog($trials, cts_load_trials_metadata());
+        cts_write_trials_catalog($trials, $metadata);
 
         cts_audit_log($cts_pdo, 'trial_deleted', 'trial', $trialId, [
             'title' => $deletedTrial['title'] ?? ''
@@ -312,7 +342,7 @@ try {
         cts_json_response([
             'success' => true,
             'message' => 'Trial deleted successfully.',
-            'metadata' => cts_load_trials_metadata()
+            'metadata' => $metadata
         ]);
     }
 

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/cohort-segmentation-proposal.schema.json",
+  "title": "Model-assisted cohort segmentation proposal",
+  "type": "object",
+  "required": ["label", "sourceSpan", "criterionIds", "confidence", "ambiguities", "modelVersion"],
+  "properties": {
+    "label": { "type": "string", "minLength": 1 },
+    "sourceSpan": {
+      "type": "object",
+      "required": ["start", "end", "text"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "criterionIds": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "ambiguities": { "type": "array", "items": { "type": "string" } },
+    "modelVersion": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

@@ -353,7 +353,7 @@
       "description": "Rising PSA under castrate testosterone with no distant metastases on conventional imaging (nmCRPC/M0 CRPC)"
     },
     {
-      "id": "crpc_metastatic_preARPI",
+      "id": "crpc_metastatic_prearpi",
       "label": "CRPC — Metastatic, Pre-ARPI (mCRPC 1L)",
       "short": "mCRPC 1L (pre-ARPI)",
       "section": "CRPC",
@@ -383,7 +383,7 @@
       "description": "mCRPC without prior ARPI or with only prior docetaxel. Standard 1L agents: enzalutamide, abiraterone, docetaxel, cabazitaxel combinations, PARP inhibitors (HRR+), PSMA-RLT (PSMA+)."
     },
     {
-      "id": "crpc_metastatic_postARPI",
+      "id": "crpc_metastatic_postarpi",
       "label": "CRPC — Metastatic, Post-ARPI (mCRPC 2L+)",
       "short": "mCRPC 2L+ (post-ARPI)",
       "section": "CRPC",
@@ -543,10 +543,10 @@
     "bcr_post_rp": ["Salvage RT to prostate bed", "Salvage RT + short-course ADT", "Observation"],
     "bcr_post_rt": ["ADT (intermittent or continuous)", "Salvage RP (selected)", "Salvage cryotherapy / HIFU"],
     "cspc_oligometastatic": ["ADT + ARPI (abiraterone, enzalutamide, apalutamide, darolutamide)", "MDT/SBRT to metastases + SOC systemic therapy"],
-    "cspc_high_volume": ["ADT + docetaxel (CHAARTED)", "ADT + abiraterone (LATITUDE)", "ADT + enzalutamide (ARCHES)", "ADT + apalutamide (TITAN)", "ADT + darolutamide + docetaxel (ARANOTE)", "Triplet: ADT + ARPI + docetaxel"],
+    "cspc_high_volume": ["ADT + docetaxel (CHAARTED)", "ADT + abiraterone (LATITUDE)", "ADT + enzalutamide (ARCHES)", "ADT + apalutamide (TITAN)", "Triplet: ADT + ARPI + docetaxel"],
     "crpc_nonmetastatic": ["Enzalutamide (PROSPER)", "Apalutamide (SPARTAN)", "Darolutamide (ARAMIS)"],
-    "crpc_metastatic_preARPI": ["Enzalutamide or abiraterone", "Docetaxel", "177Lu-PSMA-617 (PSMA+)", "Olaparib / rucaparib (HRR+)"],
-    "crpc_metastatic_postARPI": ["Cabazitaxel", "Olaparib (BRCA/HRR+)", "Rucaparib (BRCA+)", "177Lu-PSMA-617 (PSMA+)", "Pembrolizumab (MSI-H/TMB-H)", "Platinum (CDK12 mut)", "Clinical trial"]
+    "crpc_metastatic_prearpi": ["Enzalutamide or abiraterone", "Docetaxel", "177Lu-PSMA-617 (PSMA+)", "Olaparib / rucaparib (HRR+)"],
+    "crpc_metastatic_postarpi": ["Cabazitaxel", "Olaparib (BRCA/HRR+)", "Rucaparib (BRCA+)", "177Lu-PSMA-617 (PSMA+)", "Pembrolizumab (MSI-H/TMB-H)", "Platinum (CDK12 mut)", "Clinical trial"]
   },
   "known_trial_anchors": {
     "description": "Named landmark trials for cross-reference and classification validation",
@@ -555,15 +555,15 @@
       {"name": "LATITUDE", "state": "cspc_high_volume", "intervention": "ADT + abiraterone"},
       {"name": "TITAN", "state": "cspc_general", "intervention": "ADT + apalutamide"},
       {"name": "ARCHES", "state": "cspc_general", "intervention": "ADT + enzalutamide"},
-      {"name": "ARANOTE", "state": "cspc_high_volume", "intervention": "ADT + darolutamide + docetaxel"},
+      {"name": "ARANOTE", "state": "cspc_general", "intervention": "ADT + darolutamide (without docetaxel)"},
       {"name": "PEACE-1", "state": "cspc_high_volume", "intervention": "ADT + docetaxel + abiraterone"},
       {"name": "SPARTAN", "state": "crpc_nonmetastatic", "intervention": "Apalutamide"},
       {"name": "PROSPER", "state": "crpc_nonmetastatic", "intervention": "Enzalutamide"},
       {"name": "ARAMIS", "state": "crpc_nonmetastatic", "intervention": "Darolutamide"},
-      {"name": "VISION", "state": "crpc_metastatic_postARPI", "intervention": "177Lu-PSMA-617"},
-      {"name": "TheraP", "state": "crpc_metastatic_postARPI", "intervention": "177Lu-PSMA-617"},
-      {"name": "TRITON2", "state": "crpc_metastatic_postARPI", "intervention": "Rucaparib (BRCA+)"},
-      {"name": "PROfound", "state": "crpc_metastatic_postARPI", "intervention": "Olaparib (HRR+)"},
+      {"name": "VISION", "state": "crpc_metastatic_postarpi", "intervention": "177Lu-PSMA-617"},
+      {"name": "TheraP", "state": "crpc_metastatic_postarpi", "intervention": "177Lu-PSMA-617"},
+      {"name": "TRITON2", "state": "crpc_metastatic_postarpi", "intervention": "Rucaparib (BRCA+)"},
+      {"name": "PROfound", "state": "crpc_metastatic_postarpi", "intervention": "Olaparib (HRR+)"},
       {
         "name": "INDICATE",
         "state": ["bcr_post_rp", "cspc_oligometastatic"],

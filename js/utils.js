@@ -695,14 +695,20 @@ class Utils {
           piName: (site.piName || '').toString().trim(),
           email: (site.email || '').toString().trim(),
           phone: (site.phone || '').toString().trim(),
-          affiliation: (site.affiliation || '').toString().trim()
+          affiliation: (site.affiliation || '').toString().trim(),
+          locationStatus: (site.locationStatus || site.status || 'unknown').toString().trim(),
+          statusSource: (site.statusSource || 'not_available').toString().trim(),
+          sourceVerifiedDate: site.sourceVerifiedDate || site.verifiedAt || null,
+          ingestedAt: site.ingestedAt || null,
+          manualStatus: site.manualStatus || null,
+          statusStale: site.statusStale === true
         }))
       : [];
     const normalizedDiseaseSettingAll = Array.isArray(trial?.diseaseSettingAll)
       ? trial.diseaseSettingAll
         .map(item => (item === null || item === undefined ? '' : String(item).trim()))
         .filter(Boolean)
-      : [];
+      : (trial?.diseaseSettingAll || '').toString().split('|').map(item => item.trim()).filter(Boolean);
     const normalizedDiseaseSettingAllIds = Array.isArray(trial?.diseaseSettingAllIds)
       ? trial.diseaseSettingAllIds
         .map(item => (item === null || item === undefined ? '' : String(item).trim()))
@@ -751,6 +757,11 @@ class Utils {
 
     return {
       id: (trial?.id || '').toString().trim(),
+      schemaVersion: (trial?.schemaVersion || '').toString().trim(),
+      registry: (trial?.registry || '').toString().trim(),
+      registryVersion: (trial?.registryVersion || '').toString().trim(),
+      retrievedAt: (trial?.retrievedAt || '').toString().trim(),
+      rawRecordHash: (trial?.rawRecordHash || '').toString().trim(),
       nctId: (trial?.nctId || '').toString().trim(),
       title: (trial?.title || '').toString().trim(),
       status: normalizedStatus || 'not_specified',
@@ -793,11 +804,19 @@ class Utils {
       diseaseSettingAll: normalizedDiseaseSettingAll,
       diseaseSettingAllIds: normalizedDiseaseSettingAllIds,
       classificationConfidence: (trial?.classificationConfidence || '').toString().trim(),
+      classificationEvidenceStrength: (trial?.classificationEvidenceStrength || trial?.classificationConfidence || '').toString().trim(),
+      classificationIsProbability: trial?.classificationIsProbability === true,
+      classificationMethod: (trial?.classificationMethod || '').toString().trim(),
       classificationEvidence: normalizeStringList(trial?.classificationEvidence),
+      classificationFieldEvidence: Array.isArray(trial?.classificationFieldEvidence) ? trial.classificationFieldEvidence.map(item => ({ ...item })) : [],
       treatmentModality: (trial?.treatmentModality || '').toString().trim(),
       delivery: (trial?.delivery || '').toString().trim(),
       clinicalAxes: normalizedClinicalAxes,
       sourceTags: normalizedSourceTags,
+      criteria: Array.isArray(trial?.criteria) ? trial.criteria.map(item => ({ ...item })) : [],
+      cohorts: Array.isArray(trial?.cohorts) ? trial.cohorts.map(item => ({ ...item })) : [],
+      dataQuality: trial?.dataQuality && typeof trial.dataQuality === 'object' ? { ...trial.dataQuality } : {},
+      provenance: trial?.provenance && typeof trial.provenance === 'object' ? { ...trial.provenance } : {},
       nccnTaxonomyVersion: (trial?.nccnTaxonomyVersion || '').toString().trim(),
       ctGovUrl: (trial?.ctGovUrl || '').toString().trim(),
       conditions: normalizeStringList(trial?.conditions),

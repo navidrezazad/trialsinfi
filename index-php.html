@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clinical Trials - Southern California</title>
     <meta name="description" content="Find and explore clinical trials in Southern California hospitals">
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/styles.css?v=20260802-scientific-prescreen-r3">
+    <link rel="stylesheet" href="css/components.css?v=20260802-scientific-prescreen-r3">
     <link rel="icon" type="image/x-icon" href="assets/favicon/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon/apple-touch-icon.png">
@@ -49,12 +49,12 @@
                 <div style="display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; margin-bottom: 0.75rem;">
                     <div>
                         <h3 style="margin: 0 0 0.25rem; font-size: 1.25rem;">Search Trials</h3>
-                        <p style="margin: 0; color: var(--text-secondary); line-height: 1.5;">Deterministic matching for prostate, bladder, kidney, and testicular cancers. Incomplete queries should surface more verification flags, not fewer trials.</p>
+                        <p style="margin: 0; color: var(--text-secondary); line-height: 1.5;">High-recall trial discovery with physician-confirmed patient facts and criterion-level uncertainty. Results support protocol review; they are not final eligibility determinations.</p>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 0.65rem; align-items: flex-end;">
                         <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.75rem; background: #ffffff; border: 1px solid var(--border-color); border-radius: 999px; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);">
-                            <span>Protocol Mode</span>
-                            <span style="color: var(--primary-color);">Multi-cancer</span>
+                            <span>Prescreen support</span>
+                            <span style="color: var(--primary-color);">Human confirmed</span>
                         </div>
                         <a href="search-guide-php.html" style="display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.9rem; border-radius: 999px; background: #ffffff; border: 1px solid var(--border-color); color: var(--primary-color); text-decoration: none; font-size: 0.84rem; font-weight: 700; box-shadow: var(--shadow-sm);">
                             <span>How to Search Effectively</span>
@@ -62,16 +62,47 @@
                     </div>
                 </div>
 
+                <div class="patient-privacy-warning" role="note">
+                    <strong>Use a de-identified clinical summary.</strong>
+                    Do not enter names, MRNs, exact dates of birth, addresses, phone numbers, email addresses, or other direct identifiers. The narrative is kept in memory only and is not saved in browser storage.
+                </div>
+
                 <label for="patientQueryInput" style="display: block; font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary);">Describe the patient in plain language</label>
                 <textarea id="patientQueryInput" rows="4" style="width: 100%; resize: vertical; border: 1px solid var(--border-color); border-radius: 14px; padding: 0.9rem 1rem; font: inherit; line-height: 1.5; background: #ffffff;" placeholder="Examples: mCRPC after enzalutamide with PSMA-positive PET; BCG-unresponsive NMIBC after adequate BCG; metastatic clear-cell RCC, IMDC intermediate risk, prior nephrectomy; seminoma stage I after orchiectomy."></textarea>
 
                 <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 0.9rem;">
-                    <button id="runPatientSearch" class="btn btn-primary" type="button">Run Search</button>
-                    <button id="clearPatientSearch" class="btn btn-outline" type="button">Clear Search</button>
-                    <div id="patientSearchStatus" style="color: var(--text-secondary); font-size: 0.875rem;"></div>
+                    <button id="runPatientSearch" class="btn btn-primary" type="button">Review extracted facts</button>
+                    <button id="clearPatientSearch" class="btn btn-outline" type="button">Clear patient data</button>
+                    <div id="patientSearchStatus" aria-live="polite" style="color: var(--text-secondary); font-size: 0.875rem;"></div>
                 </div>
 
                 <div id="patientQueryChips" style="display: none; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;"></div>
+
+                <section id="patientFactReview" class="patient-fact-review" hidden aria-labelledby="patientFactReviewTitle">
+                    <div class="patient-fact-review__header">
+                        <div>
+                            <h4 id="patientFactReviewTitle">Confirm the extracted patient facts</h4>
+                            <p>Check every row against the source text. Corrected or rejected facts remain in the audit record.</p>
+                        </div>
+                        <span id="patientFactReviewCount" class="patient-fact-review__count"></span>
+                    </div>
+                    <div id="patientIdentifierWarnings" class="patient-review-alert patient-review-alert--danger" hidden></div>
+                    <div id="patientContradictions" class="patient-review-alert patient-review-alert--warning" hidden></div>
+                    <div class="patient-fact-table-wrap">
+                        <table class="patient-fact-table">
+                            <thead>
+                                <tr><th>Extracted fact</th><th>Source text</th><th>Value and context</th><th>Physician decision</th></tr>
+                            </thead>
+                            <tbody id="patientFactRows"></tbody>
+                        </table>
+                    </div>
+                    <div id="patientCriticalQuestions" class="patient-review-list" hidden></div>
+                    <div id="patientIgnoredText" class="patient-review-list" hidden></div>
+                    <div class="patient-fact-review__actions">
+                        <button id="confirmPatientFacts" class="btn btn-primary" type="button">Find potentially relevant cohorts</button>
+                        <span>Full protocol and trial-team review remain required.</span>
+                    </div>
+                </section>
             </section>
 
             <section id="browseSearchSection" class="search-section">
@@ -209,10 +240,13 @@
 
     <!-- PHP Version Scripts -->
     <script src="js/utils.js?v=20260421-utils-fix"></script>
-    <script src="js/trial-manager-php.js?v=20260421-utils-fix"></script>
+    <script src="js/trial-manager-php.js?v=20260802-scientific-prescreen-r3"></script>
     <script src="js/search-filter.js?v=20260421-utils-fix"></script>
-    <script src="js/patient-query-parser.js?v=20260518-patient-match"></script>
-    <script src="js/patient-trial-matcher.js?v=20260518-patient-match"></script>
-    <script src="js/main-php.js?v=20260421-utils-fix"></script>
+    <script src="js/clinical-vocabulary.js?v=20260802-scientific-prescreen-r3"></script>
+    <script src="js/clinical-trial-schema.js?v=20260802-scientific-prescreen-r3"></script>
+    <script src="js/trial-retrieval.js?v=20260802-scientific-prescreen-r3"></script>
+    <script src="js/patient-query-parser.js?v=20260802-scientific-prescreen-r3"></script>
+    <script src="js/patient-trial-matcher.js?v=20260802-scientific-prescreen-r3"></script>
+    <script src="js/main-php.js?v=20260802-scientific-prescreen-r3"></script>
 </body>
 </html>

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0.0",
+  "globalAliases": {
+    "mixed_gct": "mixed_seminoma_nsgct",
+    "mixed_seminoma_nsgct": "mixed_seminoma_nsgct",
+    "vhl_altered": "vhl_unspecified",
+    "bcg-unresponsive": "bcg_unresponsive"
+  },
+  "axisValueAliases": {
+    "clinical_stage": { "stage_is": "stage_1s", "stage_1s": "stage_1s" },
+    "prior_chemo_lines": { "2+": "two_or_more", "2": "two_or_more", "2_plus": "two_or_more", "3+": "three_or_more", "3_plus": "three_or_more" },
+    "prior_systemic_lines": { "2+": "two_or_more", "2": "two_or_more", "2_plus": "two_or_more", "3+": "three_or_more", "3_plus": "three_or_more" },
+    "stage1_risk_factors": { "present": "with_risk_factors", "absent": "without_risk_factors" },
+    "histology": { "mixed_gct": "mixed_seminoma_nsgct" },
+    "vhl_status": { "vhl_altered": "vhl_unspecified" }
+  },
+  "criterionStates": ["SATISFIED", "VIOLATED", "UNKNOWN", "NOT_MODELED", "NOT_APPLICABLE"],
+  "reviewTiers": ["PRIORITY_PROTOCOL_REVIEW", "POTENTIALLY_RELEVANT", "MANUAL_REVIEW_TRIAL_DATA", "MODELED_CONFLICT", "DISEASE_CONTEXT_RETRIEVAL"],
+  "patientConcepts": [
+    "cancer_type", "disease_context", "treatment_exposure", "age_years", "administrative_sex",
+    "bcg_status", "cisplatin_status", "cis_papillary_pattern", "castration_status", "metastatic_status",
+    "disease_volume", "prior_arpi", "prior_docetaxel", "hrr_gene", "fgfr3_status", "fgfr_alteration",
+    "her2_status", "biomarker_hrr", "biomarker_label", "psma_status", "psma_pet_pattern",
+    "prostate_volume_class", "prostate_histology", "taxane_exposure", "genomic_classifier",
+    "genomic_classifier_label", "adt_status", "bcg_adequacy", "bcg_timing_pattern", "platinum_status",
+    "perioperative_status", "histology", "imdc_risk", "prior_systemic_lines", "prior_io", "prior_vegf_tki",
+    "nephrectomy_status", "vhl_status", "met_alteration", "sarcomatoid", "clinical_stage", "igcccg_risk",
+    "primary_site", "prior_chemo_lines", "prior_hdct", "rplnd_status", "marker_status",
+    "gct_residual_mass_size_cm", "gct_marker_trend", "gct_salvage_line", "stage1_risk_factors",
+    "ecog_status", "lab_state", "organ_function_state", "since_last_systemic_therapy_days",
+    "since_last_radiation_days", "since_last_surgery_days", "recent_imaging_days",
+    "persistent_markers_after_orchiectomy", "hemoglobin_gdl", "absolute_neutrophil_count",
+    "platelet_count", "total_bilirubin_mg_dl", "total_bilirubin_uln_ratio", "ast_units_l",
+    "ast_uln_ratio", "alt_units_l", "alt_uln_ratio", "creatinine_clearance_ml_min", "egfr_ml_min",
+    "serum_creatinine_mg_dl"
+  ],
+  "seedClinicalAxes": {
+    "Bladder": {
+      "bcg_status": ["bcg_intolerant", "bcg_naive", "bcg_relevant_unspecified", "bcg_unresponsive", "unknown"],
+      "cisplatin_status": ["cisplatin_eligible", "cisplatin_ineligible", "cisplatin_relevant_unspecified", "unknown"],
+      "cis_papillary_pattern": ["cis_plus_papillary", "cis_only", "papillary_only", "unknown"],
+      "fgfr3_status": ["susceptible_alteration", "wild_type", "unknown"],
+      "her2_status": ["ihc_3_plus", "ihc_2_plus", "equivocal", "negative_or_low", "unknown"]
+    }
+  }
+}

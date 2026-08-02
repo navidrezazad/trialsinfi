@@ -10,8 +10,10 @@ class ClinicalTrialsApp {
     this.activeView = 'patient-search';
     this.patientSearchState = {
       active: false,
+      stage: 'input',
       rawQuery: '',
       parsedQuery: null,
+      patientFactSet: null,
       matches: null
     };
   }
@@ -44,6 +46,11 @@ class ClinicalTrialsApp {
       this.updateCatalogMeta();
 
       this.restorePatientSearch();
+      window.addEventListener('beforeunload', () => {
+        this.patientSearchState.rawQuery = '';
+        this.patientSearchState.parsedQuery = null;
+        this.patientSearchState.patientFactSet = null;
+      });
 
       // Apply initial filters (from URL if any) when patient search is not active
       if (this.activeView !== 'patient-search') {
@@ -153,24 +160,70 @@ class ClinicalTrialsApp {
     const contactEmail = Utils.getPrimaryContactEmail(trial);
     const diseaseSetting = Utils.getDiseaseSettingLabel(trial) || 'Not specified';
     const treatmentModality = trial.treatmentModality || 'Not specified';
-    const classificationConfidence = trial.classificationConfidence || 'Not specified';
+    const classificationEvidenceStrength = trial.classificationEvidenceStrength || trial.classificationConfidence || 'Not specified';
     const phaseLabel = Utils.getDisplayPhase(trial);
     const cancerTypes = Utils.getDisplayCancerTypes(trial);
+    const cohortSites = Array.isArray(matchContext?.cohort?.sites) ? matchContext.cohort.sites : (trial.sites || []);
+    const explicitSite = cohortSites.find(site => site.locationStatus && site.locationStatus !== 'unknown');
+    const siteStatusEvidence = explicitSite
+      ? `${String(explicitSite.locationStatus).replace(/_/g, ' ')} · verified ${Utils.formatDate(explicitSite.sourceVerifiedDate || '')}`
+      : 'Per-site recruitment status unavailable';
     const detailUrl = this.buildDetailUrl(trial.id, Boolean(matchContext));
     const sourceTags = matchContext ? (matchContext.sourceTagSummary || []) : [];
+    const matchTone = matchContext?.badgeTone || 'manual';
     const cardToneClass = matchContext
-      ? (matchContext.badgeTone === 'strong' ? 'trial-card--match-strong trial-card--patient-search' : 'trial-card--match-possible trial-card--patient-search')
+      ? `trial-card--match-${matchTone} trial-card--patient-search`
       : `trial-card--${statusConfig.className}`;
     const siteChipLabel = `${siteCount || 1} ${siteCount === 1 ? 'site' : 'sites'}`;
     const badgeHTML = matchContext
-      ? `<span class="trial-match-pill trial-match-pill--${matchContext.badgeTone === 'strong' ? 'strong' : 'possible'}">${Utils.sanitizeHTML(matchContext.badge)}</span>`
+      ? `<span class="trial-match-pill trial-match-pill--${matchTone}">${Utils.sanitizeHTML(matchContext.badge)}</span>`
       : '';
     const reasonHTML = matchContext?.reasonText
       ? `
-        <section class="trial-match-reason trial-match-reason--${matchContext.badgeTone === 'strong' ? 'strong' : 'possible'}">
-          <span class="trial-match-reason-label">Why it matched</span>
+        <section class="trial-match-reason trial-match-reason--${matchTone}">
+          <span class="trial-match-reason-label">Evidence summary</span>
           <p>${Utils.sanitizeHTML(matchContext.reasonText)}</p>
         </section>
+      `
+      : '';
+    const evaluations = Array.isArray(matchContext?.evaluations) ? matchContext.evaluations : [];
+    const evaluationCounts = evaluations.reduce((counts, evaluation) => {
+      counts[evaluation.status] = (counts[evaluation.status] || 0) + 1;
+      return counts;
+    }, {});
+    const criterionRowHTML = evaluation => `
+      <div>
+        <strong>${Utils.sanitizeHTML(evaluation.status || 'UNKNOWN')}</strong>
+        — ${Utils.sanitizeHTML(evaluation.reason || evaluation.question || 'Review required')}
+        ${evaluation.criterion?.sourceSpan?.text ? `<br><span class="patient-source-span">Protocol: “${Utils.sanitizeHTML(Utils.truncateText(evaluation.criterion.sourceSpan.text, 180))}”</span>` : ''}
+      </div>
+    `;
+    const criteriaHTML = evaluations.length
+      ? `
+        <details class="trial-criterion-summary" onclick="event.stopPropagation();">
+          <summary><strong>Criterion evidence</strong> · ${evaluationCounts.SATISFIED || 0} supported · ${evaluationCounts.UNKNOWN || 0} unknown · ${evaluationCounts.NOT_MODELED || 0} not modeled · ${evaluationCounts.VIOLATED || 0} conflicts</summary>
+          <div style="margin-top:0.6rem;display:grid;gap:0.5rem;">
+            ${evaluations.slice(0, 8).map(criterionRowHTML).join('')}
+            ${evaluations.length > 8 ? `
+              <details class="trial-criterion-more" onclick="event.stopPropagation();">
+                <summary>Show ${evaluations.length - 8} additional criterion evaluations</summary>
+                <div style="margin-top:0.5rem;display:grid;gap:0.5rem;">${evaluations.slice(8).map(criterionRowHTML).join('')}</div>
+              </details>
+            ` : ''}
+          </div>
+        </details>
+      `
+      : '';
+    const quality = matchContext?.trialDataQuality;
+    const dataQualityHTML = quality
+      ? `
+        <div class="trial-data-quality">
+          <strong>Trial-data quality</strong>
+          · cohort ${quality.cohortReviewed ? 'reviewed' : 'not reviewed'}
+          · ${Math.round(Number(quality.criticalCriteriaModeled || 0) * 100)}% critical criteria modeled
+          · local site status ${quality.siteStatusCurrent ? 'current' : 'unverified/stale'}
+          · snapshot ${Utils.sanitizeHTML(Utils.formatDate(quality.registrySnapshot || ''))}
+        </div>
       `
       : '';
     const flagsHTML = matchContext?.flags?.length
@@ -208,7 +261,7 @@ class ClinicalTrialsApp {
         key: 'sites',
         label: 'Sites',
         value: institutionLabel,
-        subvalue: cancerTypes,
+        subvalue: matchContext ? `${cancerTypes} · ${siteStatusEvidence}` : cancerTypes,
         icon: icon('sites')
       },
       {
@@ -229,7 +282,7 @@ class ClinicalTrialsApp {
         key: 'treatment',
         label: 'Treatment',
         value: treatmentModality,
-        subvalue: classificationConfidence,
+        subvalue: `Rule evidence: ${classificationEvidenceStrength} (not probability)`,
         icon: icon('treatment')
       }
     ];
@@ -243,10 +296,12 @@ class ClinicalTrialsApp {
         </div>
       </div>
     `).join('');
-    const extrasHTML = (reasonHTML || flagsHTML || sourceTagsHTML)
+    const extrasHTML = (reasonHTML || flagsHTML || sourceTagsHTML || criteriaHTML || dataQualityHTML)
       ? `
         <div class="trial-card-extras">
           ${reasonHTML}
+          ${criteriaHTML}
+          ${dataQualityHTML}
           ${flagsHTML}
           ${sourceTagsHTML}
         </div>
@@ -259,6 +314,7 @@ class ClinicalTrialsApp {
           <div class="trial-card-chips">
             <span class="trial-meta-chip">${Utils.sanitizeHTML(phaseLabel)}</span>
             <span class="trial-meta-chip">${Utils.sanitizeHTML(siteChipLabel)}</span>
+            ${matchContext?.cohortLabel ? `<span class="trial-meta-chip">${Utils.sanitizeHTML(matchContext.cohortLabel)}</span>` : ''}
           </div>
           <div class="trial-card-topline-right">
             ${badgeHTML}
@@ -409,6 +465,7 @@ class ClinicalTrialsApp {
     const input = document.getElementById('patientQueryInput');
     const runButton = document.getElementById('runPatientSearch');
     const clearButton = document.getElementById('clearPatientSearch');
+    const confirmButton = document.getElementById('confirmPatientFacts');
 
     if (!input || !runButton || !clearButton) {
       return;
@@ -422,6 +479,10 @@ class ClinicalTrialsApp {
       this.clearPatientSearch();
     });
 
+    confirmButton?.addEventListener('click', () => {
+      this.confirmAndRunPatientSearch();
+    });
+
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -431,18 +492,11 @@ class ClinicalTrialsApp {
   }
 
   restorePatientSearch() {
-    const input = document.getElementById('patientQueryInput');
-    const storedQuery = window.localStorage.getItem('cts_patient_query');
-    if (!input || !storedQuery) {
-      return false;
-    }
-
-    input.value = storedQuery;
-    return this.runPatientSearch(storedQuery, {
-      persist: false,
-      silentUnsupported: true,
-      activateView: this.activeView === 'patient-search'
-    });
+    // Remove narratives persisted by older deployments. Patient narratives are now
+    // memory-only and disappear on clear, refresh, or tab close.
+    window.localStorage.removeItem('cts_patient_query');
+    window.sessionStorage.removeItem('cts_patient_query');
+    return false;
   }
 
   runPatientSearch(rawQuery, options = {}) {
@@ -453,7 +507,7 @@ class ClinicalTrialsApp {
     if (!query) {
       this.clearPatientSearch();
       if (status) {
-        status.textContent = 'Enter a patient description to run protocol-style matching.';
+        status.textContent = 'Enter a de-identified patient description, then review the extracted facts.';
       }
       return false;
     }
@@ -477,7 +531,7 @@ class ClinicalTrialsApp {
       return false;
     }
 
-    const parsedQuery = window.PatientQueryParser?.parse(query);
+    const parsedQuery = options.parsedQuery || window.PatientQueryParser?.parse(query);
     if (!parsedQuery?.supported) {
       this.patientSearchState = {
         active: false,
@@ -505,19 +559,45 @@ class ClinicalTrialsApp {
       return false;
     }
 
+    if (options.confirmed !== true) {
+      this.patientSearchState = {
+        active: false,
+        stage: 'review',
+        rawQuery: query,
+        parsedQuery,
+        patientFactSet: null,
+        matches: null
+      };
+      this.renderPatientQueryChips(parsedQuery);
+      this.renderPatientFactReview(parsedQuery);
+      if (status) {
+        status.textContent = 'Review every extracted fact before matching. Unconfirmed or missing information will remain explicitly unknown.';
+      }
+      this.updateCatalogMeta();
+      this.updateTrialsDisplay();
+      return true;
+    }
+
     const matches = window.PatientTrialMatcher?.matchTrials({
       trials: this.trialManager.getAllTrials(),
       parsedQuery
     }) || {
       parsedQuery,
-      strongMatches: [],
-      possibleMatches: []
+      priorityReview: [],
+      potentiallyRelevant: [],
+      manualReview: [],
+      modeledConflicts: [],
+      diseaseContextOnly: [],
+      evaluatedCohorts: [],
+      auditTrail: []
     };
 
     this.patientSearchState = {
       active: true,
+      stage: 'results',
       rawQuery: query,
       parsedQuery,
+      patientFactSet: parsedQuery.patientFactSet || null,
       matches
     };
 
@@ -526,13 +606,9 @@ class ClinicalTrialsApp {
       this.updateViewUI();
     }
 
-    if (options.persist !== false) {
-      window.localStorage.setItem('cts_patient_query', query);
-    }
-
     if (status) {
       const cancerLabel = parsedQuery?.cancerType ? `${parsedQuery.cancerType.toLowerCase()} matching` : 'patient matching';
-      status.textContent = `${cancerLabel.charAt(0).toUpperCase()}${cancerLabel.slice(1)} is active. Catalog filters are hidden until you clear the search.`;
+      status.textContent = `${cancerLabel.charAt(0).toUpperCase()}${cancerLabel.slice(1)} is active. Results support protocol review and are not final eligibility determinations.`;
     }
 
     this.renderPatientQueryChips(parsedQuery);
@@ -540,6 +616,177 @@ class ClinicalTrialsApp {
     this.updateTrialsDisplay();
     Utils.scrollToElement('.results-header');
     return true;
+  }
+
+  renderPatientFactReview(parsedQuery) {
+    const review = document.getElementById('patientFactReview');
+    const rows = document.getElementById('patientFactRows');
+    const count = document.getElementById('patientFactReviewCount');
+    const warnings = document.getElementById('patientIdentifierWarnings');
+    const contradictions = document.getElementById('patientContradictions');
+    const questions = document.getElementById('patientCriticalQuestions');
+    const ignored = document.getElementById('patientIgnoredText');
+    const confirmButton = document.getElementById('confirmPatientFacts');
+    if (!review || !rows) return;
+
+    const facts = Array.isArray(parsedQuery?.candidateFacts) ? parsedQuery.candidateFacts : [];
+    rows.innerHTML = '';
+    facts.forEach(fact => {
+      const row = document.createElement('tr');
+      const display = fact.concept?.display || fact.concept?.code || 'Extracted fact';
+      const sourceText = fact.sourceSpan?.text || 'No exact source span';
+      const eventDate = String(fact.temporality?.eventTime || '').slice(0, 10);
+      const observedDate = String(fact.observedAt || '').slice(0, 10);
+      const option = (value, selected, label) => `<option value="${value}"${value === selected ? ' selected' : ''}>${label || value.replace(/_/g, ' ')}</option>`;
+      row.innerHTML = `
+        <td><strong>${Utils.sanitizeHTML(display)}</strong><br><small>${Utils.sanitizeHTML(fact.predicate || '')}</small></td>
+        <td><span class="patient-source-span">“${Utils.sanitizeHTML(sourceText)}”</span></td>
+        <td class="patient-fact-edit">
+          <label>Value<input type="text" data-patient-fact-value="${Utils.sanitizeHTML(fact.factId)}" aria-label="Value for ${Utils.sanitizeHTML(display)}"></label>
+          <details>
+            <summary>Assertion, timing, units, experiencer</summary>
+            <div class="patient-fact-context-grid">
+              <label>Assertion<select data-patient-fact-assertion="${Utils.sanitizeHTML(fact.factId)}">
+                ${['present', 'absent', 'possible', 'conditional', 'hypothetical'].map(value => option(value, fact.assertion)).join('')}
+              </select></label>
+              <label>Status<select data-patient-fact-status="${Utils.sanitizeHTML(fact.factId)}">
+                ${['current', 'historical', 'planned', 'resolved', 'unknown'].map(value => option(value, fact.status)).join('')}
+              </select></label>
+              <label>Experiencer<select data-patient-fact-experiencer="${Utils.sanitizeHTML(fact.factId)}">
+                ${['patient', 'family_member', 'donor', 'other'].map(value => option(value, fact.experiencer)).join('')}
+              </select></label>
+              <label>Unit<input type="text" data-patient-fact-unit="${Utils.sanitizeHTML(fact.factId)}" value="${Utils.sanitizeHTML(fact.unit || '')}" placeholder="e.g. g/dL"></label>
+              <label>Observed date<input type="date" data-patient-fact-observed="${Utils.sanitizeHTML(fact.factId)}" value="${Utils.sanitizeHTML(observedDate)}"></label>
+              <label>Event date<input type="date" data-patient-fact-event="${Utils.sanitizeHTML(fact.factId)}" value="${Utils.sanitizeHTML(eventDate)}"></label>
+            </div>
+          </details>
+        </td>
+        <td>
+          <select data-patient-fact-decision="${Utils.sanitizeHTML(fact.factId)}" aria-label="Decision for ${Utils.sanitizeHTML(display)}">
+            <option value="unreviewed">Needs review</option>
+            <option value="confirmed">Confirm</option>
+            <option value="corrected">Confirm correction</option>
+            <option value="rejected">Reject extraction</option>
+          </select>
+        </td>
+      `;
+      const valueInput = row.querySelector('[data-patient-fact-value]');
+      if (valueInput) valueInput.value = typeof fact.value === 'object' ? JSON.stringify(fact.value) : String(fact.value ?? '');
+      rows.appendChild(row);
+    });
+
+    if (count) count.textContent = `${facts.length} candidate fact${facts.length === 1 ? '' : 's'}`;
+
+    const identifierWarnings = parsedQuery?.directIdentifierWarnings || [];
+    if (warnings) {
+      warnings.hidden = identifierWarnings.length === 0;
+      warnings.innerHTML = identifierWarnings.length
+        ? `<strong>Remove possible direct identifiers before continuing.</strong><ul>${identifierWarnings.map(item => `<li>${Utils.sanitizeHTML(item.message)}</li>`).join('')}</ul>`
+        : '';
+    }
+
+    const contradictionItems = parsedQuery?.contradictions || [];
+    if (contradictions) {
+      contradictions.hidden = contradictionItems.length === 0;
+      contradictions.innerHTML = contradictionItems.length
+        ? `<strong>Contradictory assertions detected.</strong><p>Confirm one assertion and reject or correct the conflicting assertion before matching.</p>`
+        : '';
+    }
+
+    const criticalQuestions = parsedQuery?.criticalQuestions || [];
+    if (questions) {
+      questions.hidden = criticalQuestions.length === 0;
+      questions.innerHTML = criticalQuestions.length
+        ? `<h5>Important missing information</h5><ul>${criticalQuestions.map(item => `<li>${Utils.sanitizeHTML(item.question)}</li>`).join('')}</ul>`
+        : '';
+    }
+
+    const ignoredItems = parsedQuery?.ignoredText || [];
+    const contextWarnings = parsedQuery?.contextWarnings || [];
+    if (ignored) {
+      ignored.hidden = ignoredItems.length === 0 && contextWarnings.length === 0;
+      ignored.innerHTML = ignoredItems.length || contextWarnings.length
+        ? `<h5>Context excluded or not modeled</h5><ul>${contextWarnings.map(item => `<li>${Utils.sanitizeHTML(item.message)}</li>`).join('')}${ignoredItems.map(item => `<li>“${Utils.sanitizeHTML(item.text)}”</li>`).join('')}</ul>`
+        : '';
+    }
+
+    if (confirmButton) confirmButton.disabled = identifierWarnings.length > 0 || facts.length === 0;
+    review.hidden = false;
+  }
+
+  hidePatientFactReview() {
+    const review = document.getElementById('patientFactReview');
+    const rows = document.getElementById('patientFactRows');
+    if (review) review.hidden = true;
+    if (rows) rows.innerHTML = '';
+  }
+
+  confirmAndRunPatientSearch() {
+    const parsedQuery = this.patientSearchState.parsedQuery;
+    const status = document.getElementById('patientSearchStatus');
+    if (!parsedQuery || !window.PatientQueryParser?.applyFactDecisions) return false;
+    if ((parsedQuery.directIdentifierWarnings || []).length > 0) {
+      if (status) status.textContent = 'Remove possible direct identifiers and review the text again before matching.';
+      return false;
+    }
+
+    const decisions = {};
+    let hasUnreviewed = false;
+    (parsedQuery.candidateFacts || []).forEach(fact => {
+      const select = document.querySelector(`[data-patient-fact-decision="${CSS.escape(fact.factId)}"]`);
+      const input = document.querySelector(`[data-patient-fact-value="${CSS.escape(fact.factId)}"]`);
+      const confirmation = select?.value || 'unreviewed';
+      if (confirmation === 'unreviewed') hasUnreviewed = true;
+      let value = input?.value ?? fact.value;
+      if (typeof fact.value === 'number' && value !== '') {
+        value = Number(value);
+        if (!Number.isFinite(value)) {
+          if (confirmation !== 'rejected') hasUnreviewed = true;
+          value = fact.value;
+        }
+      }
+      const assertion = document.querySelector(`[data-patient-fact-assertion="${CSS.escape(fact.factId)}"]`)?.value || fact.assertion;
+      const factStatus = document.querySelector(`[data-patient-fact-status="${CSS.escape(fact.factId)}"]`)?.value || fact.status;
+      const experiencer = document.querySelector(`[data-patient-fact-experiencer="${CSS.escape(fact.factId)}"]`)?.value || fact.experiencer;
+      const unit = document.querySelector(`[data-patient-fact-unit="${CSS.escape(fact.factId)}"]`)?.value.trim() || null;
+      const observedDate = document.querySelector(`[data-patient-fact-observed="${CSS.escape(fact.factId)}"]`)?.value || '';
+      const eventDate = document.querySelector(`[data-patient-fact-event="${CSS.escape(fact.factId)}"]`)?.value || '';
+      const observedAt = observedDate ? `${observedDate}T00:00:00.000Z` : null;
+      const temporality = { ...(fact.temporality || {}), eventTime: eventDate ? `${eventDate}T00:00:00.000Z` : null };
+      const changed = String(value) !== String(fact.value ?? '') || assertion !== fact.assertion || factStatus !== fact.status || experiencer !== fact.experiencer || unit !== (fact.unit || null) || observedAt !== (fact.observedAt || null) || temporality.eventTime !== (fact.temporality?.eventTime || null);
+      decisions[fact.factId] = {
+        confirmation: changed && confirmation === 'confirmed' ? 'corrected' : confirmation,
+        value,
+        assertion,
+        status: factStatus,
+        experiencer,
+        unit,
+        observedAt,
+        temporality
+      };
+    });
+    if (hasUnreviewed) {
+      if (status) status.textContent = 'Confirm, correct, or reject every extracted fact and use valid numeric values before matching.';
+      return false;
+    }
+
+    const patientFactSet = window.PatientQueryParser.applyFactDecisions(parsedQuery, decisions);
+    if ((patientFactSet.contradictions || []).length > 0) {
+      if (status) status.textContent = 'Resolve contradictory facts by rejecting or correcting one assertion before matching.';
+      return false;
+    }
+    const reviewedQuery = window.PatientQueryParser.reconcileReviewedFacts
+      ? window.PatientQueryParser.reconcileReviewedFacts(parsedQuery, patientFactSet)
+      : { ...parsedQuery, patientFactSet };
+    this.patientSearchState.parsedQuery = reviewedQuery;
+    this.patientSearchState.patientFactSet = patientFactSet;
+    this.hidePatientFactReview();
+    return this.runPatientSearch(this.patientSearchState.rawQuery, {
+      confirmed: true,
+      parsedQuery: reviewedQuery,
+      persist: false,
+      activateView: true
+    });
   }
 
   clearPatientSearch() {
@@ -551,19 +798,23 @@ class ClinicalTrialsApp {
 
     this.patientSearchState = {
       active: false,
+      stage: 'input',
       rawQuery: '',
       parsedQuery: null,
+      patientFactSet: null,
       matches: null
     };
 
     window.localStorage.removeItem('cts_patient_query');
+    window.sessionStorage.removeItem('cts_patient_query');
+    this.hidePatientFactReview();
 
     if (input) {
       input.value = '';
     }
     if (status) {
       status.textContent = isPatientSearchView
-        ? 'Enter a patient description to run protocol-style matching.'
+        ? 'Enter a de-identified patient description, then review the extracted facts.'
         : '';
     }
     if (chips) {
@@ -665,19 +916,24 @@ class ClinicalTrialsApp {
 
     const emptyState = Utils.createElementFromHTML(`
       <section class="patient-search-empty">
-        <h3>Search trials separately from the catalog overview</h3>
-        <p>Describe a prostate, bladder, kidney, or testicular patient in plain language to generate protocol-style strong and possible matches. The Trial overview tab still shows the full trial catalog with normal filters.</p>
-        <div class="patient-search-empty-note">Deterministic multi-cancer matching</div>
+        <h3>${this.patientSearchState.stage === 'review' ? 'Review the extracted facts above' : 'Search trials separately from the catalog overview'}</h3>
+        <p>${this.patientSearchState.stage === 'review' ? 'Matching waits for physician confirmation. Missing, contradictory, and unmodeled information remains explicit.' : 'Describe a de-identified prostate, bladder, kidney, or testicular case. The system retrieves plausible cohorts for protocol review; it does not determine final eligibility.'}</p>
+        <div class="patient-search-empty-note">High-recall prescreen support · Human confirmation required</div>
       </section>
     `);
     trialsContainer.appendChild(emptyState);
   }
 
   renderPatientSearchResults(trialsContainer, noResults) {
-    const matches = this.patientSearchState.matches || { strongMatches: [], possibleMatches: [] };
-    const strongMatches = matches.strongMatches || [];
-    const possibleMatches = matches.possibleMatches || [];
-    const totalMatches = strongMatches.length + possibleMatches.length;
+    const matches = this.patientSearchState.matches || {};
+    const groups = [
+      { key: 'priorityReview', title: 'Priority for protocol review', accent: '#166534', background: '#dcfce7', empty: 'No cohorts meet the conservative priority requirements.' },
+      { key: 'potentiallyRelevant', title: 'Potentially relevant — clarify patient evidence', accent: '#1e40af', background: '#dbeafe', empty: 'No cohorts are waiting only on missing patient evidence.' },
+      { key: 'manualReview', title: 'Manual review — trial data incomplete', accent: '#92400e', background: '#fef3c7', empty: 'No cohorts require trial-data review.' },
+      { key: 'diseaseContextOnly', title: 'Disease-context retrieval only', accent: '#334155', background: '#f1f5f9', empty: 'No broad disease-context records.' },
+      { key: 'modeledConflicts', title: 'Modeled conflicts — retained for audit', accent: '#991b1b', background: '#fee2e2', empty: 'No modeled conflicts.' }
+    ];
+    const totalMatches = groups.reduce((sum, group) => sum + (matches[group.key] || []).length, 0);
     const noResultsTitle = document.querySelector('#noResults h3');
     const noResultsText = document.querySelector('#noResults p');
 
@@ -693,7 +949,7 @@ class ClinicalTrialsApp {
         noResultsTitle.textContent = 'No patient-matched trials found';
       }
       if (noResultsText) {
-        noResultsText.textContent = 'Try adding disease setting, prior treatment history, histology, biomarkers, or risk-group details. Incomplete queries should still return possible matches with verification flags.';
+        noResultsText.textContent = 'No same-cancer cohorts were available to evaluate. Check the catalog status and source snapshot.';
       }
       return;
     }
@@ -709,25 +965,12 @@ class ClinicalTrialsApp {
       noResultsText.textContent = 'Try adjusting your search criteria or filters to find more results.';
     }
 
-    if (strongMatches.length > 0) {
-      trialsContainer.appendChild(this.renderPatientSearchGroup(
-        'Strong Matches',
-        strongMatches,
-        '#166534',
-        '#dcfce7',
-        'No strong matches for the current query.'
-      ));
-    }
-
-    if (possibleMatches.length > 0) {
-      trialsContainer.appendChild(this.renderPatientSearchGroup(
-        'Possible Matches',
-        possibleMatches,
-        '#92400e',
-        '#fef3c7',
-        'No possible matches for the current query.'
-      ));
-    }
+    groups.forEach(group => {
+      const entries = matches[group.key] || [];
+      if (entries.length > 0) {
+        trialsContainer.appendChild(this.renderPatientSearchGroup(group.title, entries, group.accent, group.background, group.empty));
+      }
+    });
   }
 
   renderPatientSearchGroup(title, entries, accentColor, backgroundColor, emptyState) {
@@ -739,7 +982,7 @@ class ClinicalTrialsApp {
     header.innerHTML = `
       <div>
         <h3 style="margin:0;font-size:1.15rem;color:${accentColor};">${Utils.sanitizeHTML(title)}</h3>
-        <p style="margin:0.2rem 0 0;color:${accentColor};opacity:0.88;font-size:0.9rem;">${entries.length} trial${entries.length === 1 ? '' : 's'}</p>
+        <p style="margin:0.2rem 0 0;color:${accentColor};opacity:0.88;font-size:0.9rem;">${entries.length} cohort${entries.length === 1 ? '' : 's'}</p>
       </div>
     `;
     section.appendChild(header);
@@ -754,10 +997,29 @@ class ClinicalTrialsApp {
 
     const grid = document.createElement('div');
     grid.className = 'trials-grid';
-    entries.forEach(entry => {
-      grid.appendChild(this.createTrialCard(entry.trial, entry.match));
-    });
     section.appendChild(grid);
+
+    const batchSize = 20;
+    let visibleCount = 0;
+    const moreButton = document.createElement('button');
+    moreButton.type = 'button';
+    moreButton.className = 'patient-results-more';
+    const appendNextBatch = () => {
+      const nextCount = Math.min(entries.length, visibleCount + batchSize);
+      entries.slice(visibleCount, nextCount).forEach(entry => {
+        grid.appendChild(this.createTrialCard(entry.trial, entry.match));
+      });
+      visibleCount = nextCount;
+      const remaining = entries.length - visibleCount;
+      if (remaining > 0) {
+        moreButton.textContent = `Show next ${Math.min(batchSize, remaining)} (${remaining} remaining)`;
+      } else {
+        moreButton.remove();
+      }
+    };
+    moreButton.addEventListener('click', appendNextBatch);
+    section.appendChild(moreButton);
+    appendNextBatch();
     return section;
   }
 
@@ -787,20 +1049,24 @@ class ClinicalTrialsApp {
 
     if (this.activeView === 'patient-search') {
       if (!this.patientSearchState.active) {
-        resultsCount.textContent = 'Patient search ready';
+        resultsCount.textContent = this.patientSearchState.stage === 'review' ? 'Physician fact confirmation required' : 'Patient search ready';
         return;
       }
 
-      const strongCount = this.patientSearchState.matches?.strongMatches?.length || 0;
-      const possibleCount = this.patientSearchState.matches?.possibleMatches?.length || 0;
-      const totalCount = strongCount + possibleCount;
+      const resultGroups = this.patientSearchState.matches || {};
+      const priorityCount = resultGroups.priorityReview?.length || 0;
+      const potentialCount = resultGroups.potentiallyRelevant?.length || 0;
+      const manualCount = resultGroups.manualReview?.length || 0;
+      const conflictCount = resultGroups.modeledConflicts?.length || 0;
+      const retrievalCount = resultGroups.diseaseContextOnly?.length || 0;
+      const totalCount = priorityCount + potentialCount + manualCount + conflictCount + retrievalCount;
 
       if (totalCount === 0) {
         resultsCount.textContent = 'No patient-matched trials found';
         return;
       }
 
-      resultsCount.textContent = `${strongCount} strong match${strongCount === 1 ? '' : 'es'} · ${possibleCount} possible match${possibleCount === 1 ? '' : 'es'}`;
+      resultsCount.textContent = `${totalCount} cohort${totalCount === 1 ? '' : 's'} evaluated · ${priorityCount} priority · ${potentialCount} patient-fact review · ${manualCount} trial-data review · ${conflictCount} conflicts`;
       return;
     }
 

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search Guide - Clinical Trials SoCal</title>
-    <meta name="description" content="Guide for writing effective patient search queries for Clinical Trials SoCal.">
+    <title>Physician Search Guide - Clinical Trials SoCal</title>
+    <meta name="description" content="Safety-focused guide for reviewing extracted facts and retrieving GU oncology trial cohorts.">
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="icon" type="image/x-icon" href="assets/favicon/favicon.ico">
@@ -15,10 +15,8 @@
     <header class="header">
         <div class="container">
             <div class="header-content">
-                <h1 class="logo">
-                    <a href="index-php.html">Clinical Trials SoCal</a>
-                </h1>
-                <nav class="nav">
+                <h1 class="logo"><a href="index-php.html">Clinical Trials SoCal</a></h1>
+                <nav class="nav" aria-label="Primary navigation">
                     <ul class="nav-list">
                         <li><a href="index-php.html" class="nav-link">Search Trials</a></li>
                         <li><a href="index-php.html?view=browse" class="nav-link">Trial Overview</a></li>
@@ -35,155 +33,108 @@
         <div class="container">
             <section class="hero" style="margin-bottom: 2rem;">
                 <div class="hero-content" style="max-width: 900px; margin: 0 auto;">
-                    <div style="display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.4rem 0.8rem; border-radius: 999px; background: #ffffff; border: 1px solid var(--border-color); color: var(--primary-color); font-size: 0.82rem; font-weight: 700; box-shadow: var(--shadow-sm); margin-bottom: 1rem;">
-                        <span>Search Guide</span>
-                    </div>
-                    <h2 class="hero-title" style="max-width: 900px; margin-left: auto; margin-right: auto;">How To Write Better Trial Search Queries</h2>
-                    <p class="hero-description" style="max-width: 760px;">
-                        The search works best when you describe the disease setting, exact prior therapies, progression history, biomarkers, and any known screening facts. This page shows the wording patterns that produce the best results.
+                    <div style="display: inline-flex; padding: 0.4rem 0.8rem; border-radius: 999px; background: #fff; border: 1px solid var(--border-color); color: var(--primary-color); font-size: 0.82rem; font-weight: 700; box-shadow: var(--shadow-sm); margin-bottom: 1rem;">Physician Search Guide</div>
+                    <h2 class="hero-title">Retrieve cohorts, then review the evidence</h2>
+                    <p class="hero-description" style="max-width: 800px;">
+                        The search is a conservative protocol-review aid. It proposes source-grounded patient facts, waits for physician confirmation, and retrieves plausible cohorts. It does not determine eligibility or recommend treatment.
                     </p>
-                    <div style="margin-top: 1.25rem;">
-                        <a href="index-php.html" class="btn btn-primary">Back to Search Trials</a>
+                    <div style="margin-top: 1.25rem;"><a href="index-php.html" class="btn btn-primary">Back to Search Trials</a></div>
+                </div>
+            </section>
+
+            <section style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 18px; padding: 1.35rem 1.5rem; margin-bottom: 1.25rem;">
+                <h3 style="margin: 0 0 0.55rem; font-size: 1.1rem;">De-identify before typing</h3>
+                <p style="margin: 0; color: var(--text-secondary);">
+                    Do not enter a name, MRN, date of birth, address, phone number, email, or another direct identifier. The raw narrative is not deliberately stored in local or session storage, but de-identification remains the physician's responsibility.
+                </p>
+            </section>
+
+            <section style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); margin-bottom: 2rem;">
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Confirmation-first workflow</h3>
+                    <ol style="padding-left: 1.2rem; color: var(--text-secondary); line-height: 1.65;">
+                        <li>Enter a concise, de-identified case.</li>
+                        <li>Inspect each extracted fact and exact source phrase.</li>
+                        <li>Confirm, correct, or reject every fact.</li>
+                        <li>Resolve contradictions and inspect unmodeled text.</li>
+                        <li>Run retrieval and review the current protocol/site.</li>
+                    </ol>
+                </article>
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Recommended structure</h3>
+                    <div style="padding: 0.9rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88rem; line-height: 1.6;">
+                        [age/sex] + [cancer/setting] + [histology/risk] + [therapies/dates] + [progression] + [biomarkers] + [ECOG/labs]
                     </div>
+                    <p style="color: var(--text-secondary); margin-bottom: 0;">Exact values, units, assays, and dates are more useful than broad summaries.</p>
+                </article>
+            </section>
+
+            <section style="background: #fff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-sm); margin-bottom: 2rem;">
+                <h3 style="margin: 0 0 0.9rem; font-size: 1.15rem;">Example clinical description</h3>
+                <div style="padding: 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.65;">
+                    72-year-old man with mCRPC. Progressed on enzalutamide; last dose 2026-06-01. No prior docetaxel. BRCA2 pathogenic alteration. PSMA-positive PET. ECOG 1. Labs on 2026-08-01: hemoglobin 9.5 g/dL, ANC 1.5 x 10^9/L, platelets 125 K/uL, CrCl 55 mL/min.
+                </div>
+                <div style="display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 1rem;">
+                    <div style="padding: 0.9rem; background: #f8fafc; border-radius: 14px;"><strong>Received ≠ progressed on</strong><br><span style="color: var(--text-secondary);">State the event that is actually documented.</span></div>
+                    <div style="padding: 0.9rem; background: #f8fafc; border-radius: 14px;"><strong>Planned ≠ prior</strong><br><span style="color: var(--text-secondary);"><code>Considering pembrolizumab</code> is not exposure.</span></div>
+                    <div style="padding: 0.9rem; background: #f8fafc; border-radius: 14px;"><strong>Generic labs do not pass thresholds</strong><br><span style="color: var(--text-secondary);">Include numeric results, units, and collection date.</span></div>
                 </div>
             </section>
 
-            <section style="display: grid; gap: 1.25rem; margin-bottom: 2rem;">
-                <div style="background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%); border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem 1.5rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.65rem; font-size: 1.18rem;">The Core Idea</h3>
-                    <p style="margin: 0; color: var(--text-secondary); max-width: 64rem;">
-                        This is a structured matching tool, not a chatbot. It is designed to find trials that fit the patient’s disease state and prior-treatment context, then show what still needs verification. The better the query captures therapy sequence, the better the results.
-                    </p>
-                </div>
-
-                <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-                    <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
-                        <h3 style="margin: 0 0 0.6rem; font-size: 1.05rem;">Best Query Structure</h3>
-                        <p style="margin: 0 0 0.8rem; color: var(--text-secondary);">
-                            Use this order when possible:
-                        </p>
-                        <div style="padding: 0.9rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92rem; line-height: 1.65;">
-                            [Cancer] + [Disease state] + [Progressed on] + [Other prior therapies] + [Biomarkers] + [Screening facts]
-                        </div>
-                    </article>
-
-                    <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
-                        <h3 style="margin: 0 0 0.6rem; font-size: 1.05rem;">Most Important Distinction</h3>
-                        <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                            <li><strong style="color: var(--text-primary);">Received docetaxel</strong> is not the same as <strong style="color: var(--text-primary);">progressed on docetaxel</strong>.</li>
-                            <li><strong style="color: var(--text-primary);">Post-ARPI</strong> is not the same as <strong style="color: var(--text-primary);">progressed on enzalutamide</strong>.</li>
-                            <li>Use exact agent names whenever you know them.</li>
-                        </ul>
-                    </article>
-                </div>
+            <section style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); margin-bottom: 2rem;">
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Context that cannot become a positive fact</h3>
+                    <ul style="padding-left: 1.1rem; color: var(--text-secondary); line-height: 1.65;">
+                        <li><code>Family history of prostate cancer</code></li>
+                        <li><code>Cannot rule out brain metastases</code></li>
+                        <li><code>Possible recurrence</code></li>
+                        <li><code>Considering nivolumab</code></li>
+                    </ul>
+                    <p style="color: var(--text-secondary); margin-bottom: 0;">Possible, conditional, hypothetical, and non-patient assertions trigger abstention or a clarification request.</p>
+                </article>
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Criterion states</h3>
+                    <ul style="padding-left: 1.1rem; color: var(--text-secondary); line-height: 1.65;">
+                        <li><strong>SATISFIED</strong>: confirmed evidence satisfies the predicate.</li>
+                        <li><strong>VIOLATED</strong>: confirmed evidence contradicts it.</li>
+                        <li><strong>UNKNOWN</strong>: patient evidence is missing, uncertain, stale, or contradictory.</li>
+                        <li><strong>NOT_MODELED</strong>: protocol text cannot be represented safely.</li>
+                        <li><strong>NOT_APPLICABLE</strong>: the branch does not apply.</li>
+                    </ul>
+                </article>
             </section>
 
-            <section style="display: grid; gap: 1rem; margin-bottom: 2rem;">
-                <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
-                    <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                        <h3 style="margin: 0 0 0.75rem; font-size: 1.05rem;">Write It Like This</h3>
-                        <div style="display: grid; gap: 0.75rem;">
-                            <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #f8fafc; border: 1px solid #dbeafe;">
-                                <strong style="display: block; margin-bottom: 0.25rem; color: var(--text-primary);">Good</strong>
-                                <span style="color: var(--text-secondary);">mCRPC. Progressed on enzalutamide. No prior docetaxel. BRCA2+. PSMA-positive PET.</span>
-                            </div>
-                            <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #fef2f2; border: 1px solid #fecaca;">
-                                <strong style="display: block; margin-bottom: 0.25rem; color: var(--text-primary);">Weak</strong>
-                                <span style="color: var(--text-secondary);">Advanced prostate cancer after treatment.</span>
-                            </div>
-                        </div>
-                    </article>
-
-                    <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                        <h3 style="margin: 0 0 0.75rem; font-size: 1.05rem;">Helpful Phrases</h3>
-                        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">progressed on enzalutamide</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">received docetaxel</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">no prior cabazitaxel</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">PSMA-positive PET</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">FGFR3 mutation</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">ECOG 1</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">labs normal</span>
-                            <span style="padding: 0.4rem 0.7rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; font-size: 0.82rem; font-weight: 600;">last systemic therapy 21 days ago</span>
-                        </div>
-                    </article>
+            <section style="background: #fff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-sm); margin-bottom: 2rem;">
+                <h3 style="margin: 0 0 0.8rem; font-size: 1.15rem;">How to read the result queues</h3>
+                <div style="display: grid; gap: 0.8rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+                    <div style="padding: 1rem; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 14px;"><strong>Priority for protocol review</strong><br><span style="color: var(--text-secondary);">Positive disease evidence, reviewed critical data, no modeled critical conflict, and current local status evidence. Not an eligibility verdict.</span></div>
+                    <div style="padding: 1rem; border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 14px;"><strong>Potentially relevant</strong><br><span style="color: var(--text-secondary);">Plausible disease context, but important patient evidence remains unknown or uncertain after review.</span></div>
+                    <div style="padding: 1rem; border: 1px solid #fde68a; background: #fffbeb; border-radius: 14px;"><strong>Manual review — trial data incomplete</strong><br><span style="color: var(--text-secondary);">Cohort boundaries or critical trial criteria are incomplete, ambiguous, or unreviewed.</span></div>
+                    <div style="padding: 1rem; border: 1px solid #fecaca; background: #fef2f2; border-radius: 14px;"><strong>Modeled conflict</strong><br><span style="color: var(--text-secondary);">A represented criterion conflicts with confirmed facts; the record remains visible for audit.</span></div>
+                    <div style="padding: 1rem; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 14px;"><strong>Disease-context retrieval only</strong><br><span style="color: var(--text-secondary);">Same cancer context without enough positive evidence for a more specific queue.</span></div>
                 </div>
-            </section>
-
-            <section style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.5rem; box-shadow: var(--shadow-sm); margin-bottom: 2rem;">
-                <h3 style="margin: 0 0 1rem; font-size: 1.2rem;">Prostate Examples</h3>
-                <div style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
-                    <article style="padding: 1rem; border-radius: 16px; background: #f8fafc; border: 1px solid var(--border-color);">
-                        <strong style="display: block; margin-bottom: 0.45rem;">Broad post-ARPI</strong>
-                        <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem;">mCRPC. Progressed on enzalutamide.</div>
-                    </article>
-                    <article style="padding: 1rem; border-radius: 16px; background: #f8fafc; border: 1px solid var(--border-color);">
-                        <strong style="display: block; margin-bottom: 0.45rem;">Exact later-line sequence</strong>
-                        <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem;">mCRPC. Progressed on ADT and enzalutamide and docetaxel.</div>
-                    </article>
-                    <article style="padding: 1rem; border-radius: 16px; background: #f8fafc; border: 1px solid var(--border-color);">
-                        <strong style="display: block; margin-bottom: 0.45rem;">Received but did not progress</strong>
-                        <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem;">mCRPC. Received docetaxel. Progressed on enzalutamide.</div>
-                    </article>
-                    <article style="padding: 1rem; border-radius: 16px; background: #f8fafc; border: 1px solid var(--border-color);">
-                        <strong style="display: block; margin-bottom: 0.45rem;">Current therapy, not progression</strong>
-                        <div style="padding: 0.85rem 1rem; border-radius: 14px; background: #0f172a; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem;">mCRPC. Currently on enzalutamide.</div>
-                    </article>
-                </div>
+                <p style="margin: 1rem 0 0; color: var(--text-secondary);">Each queue is ranked and shown in batches of 20. Use the “Show next” control to inspect every retained cohort; batching does not remove candidates from the audit set.</p>
             </section>
 
             <section style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 2rem;">
-                <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.8rem; font-size: 1.08rem;">Bladder</h3>
-                    <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                        <li><code>BCG-unresponsive NMIBC with CIS</code></li>
-                        <li><code>BCG-unresponsive NMIBC with papillary-only recurrence</code></li>
-                        <li><code>Metastatic urothelial carcinoma after prior platinum. FGFR3 mutation.</code></li>
-                    </ul>
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Bladder / urothelial</h3>
+                    <code>BCG-unresponsive NMIBC with CIS after adequate BCG; recurrence documented 2026-05-15.</code>
                 </article>
-                <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.8rem; font-size: 1.08rem;">Kidney</h3>
-                    <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                        <li><code>Metastatic clear-cell RCC after prior IO.</code></li>
-                        <li><code>Metastatic papillary type 2 RCC. MET alteration.</code></li>
-                        <li><code>Metastatic chromophobe RCC.</code></li>
-                    </ul>
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Kidney / RCC</h3>
+                    <code>Metastatic clear-cell RCC, IMDC intermediate risk. Progressed on nivolumab plus cabozantinib.</code>
                 </article>
-                <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.8rem; font-size: 1.08rem;">Testicular</h3>
-                    <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                        <li><code>NSGCT with AFP elevated after orchiectomy and no prior chemotherapy</code></li>
-                        <li><code>NSGCT after first-line BEP with residual mass after chemotherapy, markers normal</code></li>
-                        <li><code>Primary mediastinal NSGCT, advanced disease, no prior chemotherapy</code></li>
-                    </ul>
-                </article>
-            </section>
-
-            <section style="display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 2rem;">
-                <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.75rem; font-size: 1.08rem;">What Strong vs Possible Usually Means</h3>
-                    <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                        <li><strong style="color: var(--text-primary);">Strong match</strong>: disease state and prior-therapy pattern fit well.</li>
-                        <li><strong style="color: var(--text-primary);">Possible match</strong>: the trial may still fit, but one or more facts need confirmation.</li>
-                        <li>Typical confirmation items: therapy sequence, biomarkers, PSMA imaging, ECOG, organ function, or washout timing.</li>
-                    </ul>
-                </article>
-                <article style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem; box-shadow: var(--shadow-sm);">
-                    <h3 style="margin: 0 0 0.75rem; font-size: 1.08rem;">Practical Tips</h3>
-                    <ul style="padding-left: 1.1rem; color: var(--text-secondary);">
-                        <li>Put the disease setting near the beginning of the query.</li>
-                        <li>Use exact drug names if you know them.</li>
-                        <li>Use <code>progressed on</code> only when progression is known.</li>
-                        <li>Use <code>received</code> if exposure is known but progression is not.</li>
-                        <li>Add <code>no prior</code> when a prohibited therapy matters.</li>
-                    </ul>
+                <article style="background: #fff; border: 1px solid var(--border-color); border-radius: 18px; padding: 1.35rem; box-shadow: var(--shadow-sm);">
+                    <h3 style="margin: 0 0 0.7rem; font-size: 1.08rem;">Testicular / GCT</h3>
+                    <code>NSGCT after first-line BEP with residual mass 2.4 cm, markers normal, no prior HDCT.</code>
                 </article>
             </section>
 
             <section style="background: linear-gradient(135deg, #f8fafc 0%, #eef6ff 100%); border: 1px solid var(--border-color); border-radius: 20px; padding: 1.4rem 1.5rem; box-shadow: var(--shadow-sm); margin-bottom: 2rem;">
-                <h3 style="margin: 0 0 0.55rem; font-size: 1.1rem;">Current Limitation</h3>
-                <p style="margin: 0; color: var(--text-secondary); max-width: 64rem;">
-                    The search is a structured matching tool, not a final eligibility engine. It is meant to help narrow the right trials and show what still needs confirmation. Final protocol review and discussion with the trial team are still required.
+                <h3 style="margin: 0 0 0.55rem; font-size: 1.1rem;">Protocol and site verification are mandatory</h3>
+                <p style="margin: 0; color: var(--text-secondary); max-width: 68rem;">
+                    One NCT record can contain different arms and cohorts. Until those boundaries are curated, the result is explicitly sent to manual review. Study-level recruiting status is not proof that a particular local site or cohort is open. Review the current protocol and confirm directly with the site before referral.
                 </p>
             </section>
         </div>
@@ -193,12 +144,8 @@
         <div class="container">
             <div class="footer-content">
                 <img src="assets/favicon/apple-touch-icon.png" alt="" class="footer-icon" aria-hidden="true">
-                <p class="footer-text">
-                    &copy; 2026 Genitourinary Cancer Clinical Trials in Southern California
-                </p>
-                <p class="footer-disclaimer">
-                    Always discuss clinical trial options with your healthcare provider to understand which study may be right for you.
-                </p>
+                <p class="footer-text">&copy; 2026 Genitourinary Cancer Clinical Trials in Southern California</p>
+                <p class="footer-disclaimer">Always review the current protocol and confirm study details with the trial team.</p>
             </div>
         </div>
     </footer>

@@ -81,8 +81,9 @@ if (empty($rawTrials)) {
 }
 
 $rawMetadata = cts_normalize_catalog_metadata($rawPayload['metadata'] ?? []);
-$existingTrials = cts_load_trials_catalog();
-$existingMetadata = cts_load_trials_metadata();
+$existingPayload = cts_load_trials_payload();
+$existingTrials = $existingPayload['trials'] ?? [];
+$existingMetadata = $existingPayload['metadata'] ?? [];
 
 $normalizedTrials = [];
 $errors = [];

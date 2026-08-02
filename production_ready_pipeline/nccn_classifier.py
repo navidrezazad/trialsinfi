@@ -7,8 +7,10 @@ from typing import Optional
 
 try:
     from .taxonomy_store import default_store
+    from .clinical_schema import exact_trial_anchor
 except ImportError:
     from taxonomy_store import default_store
+    from clinical_schema import exact_trial_anchor
 
 
 _BLADDER_TAX = default_store.get_for_cancer_type("Bladder/Urothelial")
@@ -25,6 +27,10 @@ class TrialClassification:
     disease_setting_primary_id: str = ""
     disease_setting_all: str = ""
     classification_confidence: str = "UNCLASSIFIED"
+    classification_evidence_strength: str = "UNCLASSIFIED"
+    classification_is_probability: bool = False
+    classification_method: str = "deterministic_taxonomy_rules"
+    classification_field_evidence: list[dict] = field(default_factory=list)
     classification_evidence: list[str] = field(default_factory=list)
     bcg_status: str = "Not applicable"
     cisplatin_status: str = "Not specified"
@@ -83,19 +89,44 @@ def _confidence_from_hits(hits: list[str], base: str) -> str:
     return base
 
 
-def _classify_categories(taxonomy: dict, text: str) -> tuple[list[dict], list[str]]:
+def _pattern_matches_section(pattern: str, field_name: str, text: str) -> bool:
+    for name in ("TheraP", "ARANOTE", "ARASENS"):
+        if name.lower() in pattern.lower():
+            return name in exact_trial_anchor(field_name, text)
+    return bool(re.search(pattern, text, re.IGNORECASE))
+
+
+def _classify_categories(taxonomy: dict, sections: dict[str, str] | str) -> tuple[list[dict], list[str], list[dict]]:
+    section_map = sections if isinstance(sections, dict) else {"combined_legacy": sections}
     matched_categories = []
     evidence: list[str] = []
+    field_evidence: list[dict] = []
     for category in taxonomy.get("categories", []):
-        excluded, _ = _matches_any(text, category.get("exclude_patterns", []))
+        excluded = any(
+            _pattern_matches_section(pattern, field_name, text)
+            for field_name, text in section_map.items()
+            for pattern in category.get("exclude_patterns", [])
+        )
         if excluded:
             continue
-        included, hits = _matches_any(text, category.get("include_patterns", []))
-        if included:
+        hits: list[str] = []
+        matched_fields: list[str] = []
+        for field_name, text in section_map.items():
+            for pattern in category.get("include_patterns", []):
+                if _pattern_matches_section(pattern, field_name, text):
+                    hits.append(pattern)
+                    matched_fields.append(field_name)
+                    field_evidence.append({
+                        "categoryId": category.get("id", ""),
+                        "field": field_name,
+                        "pattern": pattern,
+                        "provenanceClass": "deterministic_rule",
+                    })
+        if hits:
             confidence = _confidence_from_hits(hits, category.get("confidence_base", "MEDIUM"))
-            matched_categories.append({**category, "_confidence": confidence, "_hits": hits})
+            matched_categories.append({**category, "_confidence": confidence, "_hits": hits, "_fields": sorted(set(matched_fields))})
             evidence.extend(hits[:3])
-    return matched_categories, list(dict.fromkeys(evidence))
+    return matched_categories, list(dict.fromkeys(evidence)), field_evidence
 
 
 def _classify_axis(taxonomy: dict, text: str, axis_id: str, default: str = "unknown") -> str:
@@ -133,15 +164,15 @@ def _classify_cis_papillary_pattern(text: str) -> str:
 
 
 def _classify_fgfr3_status(text: str) -> str:
-    if re.search(r"FGFR3.*(alter|mutat|fusion|susceptible)|erdafitinib|rogaratinib|infigratinib|pemigatinib|futibatinib", text, re.I):
-        return "susceptible_alteration"
-    if re.search(r"FGFR3.*(wild.type|negative)|no FGFR3 alteration", text, re.I):
+    if re.search(r"FGFR3.*(wild.type|negative|not detected)|no FGFR3 alteration", text, re.I):
         return "wild_type"
+    if re.search(r"FGFR3.*(alter|mutat|fusion|susceptible)", text, re.I):
+        return "susceptible_alteration"
     return "Not applicable"
 
 
 def _classify_her2_status(text: str) -> str:
-    if re.search(r"HER2.*(IHC\s*)?3\+|ERBB2.*(3\+|high|positive)|trastuzumab.deruxtecan|disitamab|zanidatamab", text, re.I):
+    if re.search(r"HER2.*(IHC\s*)?3\+|ERBB2.*(3\+|high|positive)", text, re.I):
         return "ihc_3_plus"
     if re.search(r"HER2.*(IHC\s*)?2\+|ERBB2.*2\+", text, re.I):
         return "ihc_2_plus"
@@ -239,7 +270,12 @@ def _classify_treatment_modality(text: str, cancer_type: str) -> tuple[list[str]
     return matched, is_combination, delivery
 
 
-def _resolve_categories(matched_categories: list[dict], evidence: list[str], result: TrialClassification) -> None:
+def _resolve_categories(
+    matched_categories: list[dict],
+    evidence: list[str],
+    result: TrialClassification,
+    field_evidence: list[dict] | None = None,
+) -> None:
     confidence_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     matched_categories.sort(
         key=lambda category: (category.get("order", 99), confidence_rank.get(category["_confidence"], 3))
@@ -257,7 +293,10 @@ def _resolve_categories(matched_categories: list[dict], evidence: list[str], res
     result.classification_confidence = (
         "HIGH" if "HIGH" in confidences else "MEDIUM" if "MEDIUM" in confidences else "LOW"
     )
+    result.classification_evidence_strength = result.classification_confidence
+    result.classification_is_probability = False
     result.classification_evidence = evidence[:5]
+    result.classification_field_evidence = (field_evidence or [])[:20]
 
 
 def classify_trial(
@@ -270,13 +309,19 @@ def classify_trial(
     brief_summary: str = "",
 ) -> TrialClassification:
     result = TrialClassification()
+    disease_sections = {
+        "brief_title": title or "",
+        "eligibility_inclusion": eligibility_incl or "",
+        "conditions": conditions or "",
+        "brief_summary": brief_summary or "",
+    }
     disease_text = _make_text_blob(title, eligibility_incl, conditions, brief_summary)
     modality_text = _make_text_blob(title, interventions, brief_summary, eligibility_excl)
 
     if cancer_type == "Bladder/Urothelial":
-        matched_categories, evidence = _classify_categories(_BLADDER_TAX, disease_text)
+        matched_categories, evidence, field_evidence = _classify_categories(_BLADDER_TAX, disease_sections)
         if matched_categories:
-            _resolve_categories(matched_categories, evidence, result)
+            _resolve_categories(matched_categories, evidence, result, field_evidence)
         else:
             result.disease_setting_primary = (
                 "Bladder/Urothelial — unclassified (review)"
@@ -290,13 +335,15 @@ def classify_trial(
         result.bcg_status = _classify_bcg_status(disease_text)
         result.cisplatin_status = _classify_cisplatin_status(disease_text)
         result.cis_papillary_pattern = _classify_cis_papillary_pattern(disease_text)
-        result.fgfr3_status = _classify_fgfr3_status(_make_text_blob(disease_text, modality_text))
-        result.her2_status = _classify_her2_status(_make_text_blob(disease_text, modality_text))
+        # Eligibility requirements come from eligibility/condition text, never from
+        # the intervention name alone. Interventions remain retrieval signals only.
+        result.fgfr3_status = _classify_fgfr3_status(disease_text)
+        result.her2_status = _classify_her2_status(disease_text)
 
     elif cancer_type == "Prostate":
-        matched_categories, evidence = _classify_categories(_PROSTATE_TAX, disease_text)
+        matched_categories, evidence, field_evidence = _classify_categories(_PROSTATE_TAX, disease_sections)
         if matched_categories:
-            _resolve_categories(matched_categories, evidence, result)
+            _resolve_categories(matched_categories, evidence, result, field_evidence)
         else:
             result.disease_setting_primary = (
                 "Prostate — unclassified (review)"
@@ -317,9 +364,9 @@ def classify_trial(
         result.genomic_classifier = _classify_axis(_PROSTATE_TAX, disease_text, "genomic_classifier")
 
     elif cancer_type == "Kidney/RCC":
-        matched_categories, evidence = _classify_categories(_KIDNEY_TAX, disease_text)
+        matched_categories, evidence, field_evidence = _classify_categories(_KIDNEY_TAX, disease_sections)
         if matched_categories:
-            _resolve_categories(matched_categories, evidence, result)
+            _resolve_categories(matched_categories, evidence, result, field_evidence)
         else:
             result.disease_setting_primary = (
                 "Kidney/RCC — unclassified (review)"
@@ -341,9 +388,9 @@ def classify_trial(
         result.sarcomatoid = _classify_axis(_KIDNEY_TAX, disease_text, "sarcomatoid")
 
     elif cancer_type == "Testicular/GCT":
-        matched_categories, evidence = _classify_categories(_TESTICULAR_TAX, disease_text)
+        matched_categories, evidence, field_evidence = _classify_categories(_TESTICULAR_TAX, disease_sections)
         if matched_categories:
-            _resolve_categories(matched_categories, evidence, result)
+            _resolve_categories(matched_categories, evidence, result, field_evidence)
         else:
             result.disease_setting_primary = (
                 "Testicular/GCT — unclassified (review)"
@@ -376,6 +423,8 @@ def classify_trial(
     result.treatment_modality_str = " · ".join(modalities) if modalities else "Unclassified"
     result.is_combination = is_combination
     result.delivery = delivery
+    if result.classification_evidence_strength == "UNCLASSIFIED":
+        result.classification_evidence_strength = result.classification_confidence
     return result
 
 

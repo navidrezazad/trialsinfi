@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/cohort-review.schema.json",
+  "title": "Human cohort and criterion review",
+  "type": "object",
+  "required": ["schemaVersion", "reviewId", "trialId", "trialRawRecordHash", "registryVersion", "reviewer", "reviewedAt", "criterionDecisions", "cohorts"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "reviewId": { "type": "string", "minLength": 1 },
+    "trialId": { "type": "string", "minLength": 1 },
+    "trialRawRecordHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "registryVersion": { "type": "string", "minLength": 1 },
+    "reviewer": {
+      "type": "object",
+      "required": ["id", "role"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["curator", "clinician"] }
+      },
+      "additionalProperties": false
+    },
+    "reviewedAt": { "type": "string", "format": "date-time" },
+    "criterionDecisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["criterionId", "decision", "rationale"],
+        "properties": {
+          "criterionId": { "type": "string", "minLength": 1 },
+          "decision": { "enum": ["approve", "reject", "correct"] },
+          "normalizedPredicate": { "type": "object" },
+          "criticality": { "enum": ["hard", "supporting", "preference"] },
+          "rationale": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "cohorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["cohortId", "label", "sharedCriterionIds", "cohortSpecificCriterionIds", "sourceSpan"],
+        "properties": {
+          "cohortId": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "armIds": { "type": "array", "items": { "type": "string" } },
+          "diseaseConcepts": { "type": "array", "items": { "type": "string" } },
+          "enrollmentStatus": { "type": "string" },
+          "sharedCriterionIds": { "type": "array", "items": { "type": "string" } },
+          "cohortSpecificCriterionIds": { "type": "array", "items": { "type": "string" } },
+          "sourceSpan": {
+            "type": "object",
+            "required": ["field", "start", "end", "text"],
+            "properties": {
+              "field": { "enum": ["inclusionCriteria", "exclusionCriteria"] },
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 1 },
+              "text": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          },
+          "rationale": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

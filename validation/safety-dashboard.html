@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prescreen Safety Dashboard</title>
+  <style>
+    body { margin: 0; font: 15px/1.5 Inter, system-ui, sans-serif; color: #172033; background: #f4f6fa; }
+    main { max-width: 1100px; margin: auto; padding: 2rem; }
+    .warning, .card { border-radius: 12px; padding: 1rem; }
+    .warning { background: #fff5d6; border: 1px solid #e1b84d; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 1rem; margin-top: 1rem; }
+    .card { background: white; border: 1px solid #dce2ec; }
+    .metric { font-size: 2rem; font-weight: 750; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .55rem; border-bottom: 1px solid #e5e9f0; text-align: left; }
+    input { margin: 1rem 0; }
+  </style>
+</head>
+<body><main>
+  <h1>Aggregate safety telemetry</h1>
+  <p class="warning">This dashboard accepts allowlisted aggregate counts only. Do not load raw narratives, patient facts, or identifiers.</p>
+  <input id="aggregateFile" type="file" accept="application/json,.json">
+  <div id="summary" class="grid"></div>
+  <div id="tables" class="grid"></div>
+  <script src="../js/safety-telemetry.js"></script>
+  <script src="safety-dashboard.js"></script>
+</main></body>
+</html>

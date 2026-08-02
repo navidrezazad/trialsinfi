@@ -1,4 +1,50 @@
 (function (global) {
+  "use strict";
+
+  let schemaApi = global.ClinicalTrialSchema;
+  let vocabularyApi = global.ClinicalVocabulary;
+  if (!schemaApi && typeof require === "function") {
+    try {
+      schemaApi = require("./clinical-trial-schema.js");
+    } catch (error) {
+      schemaApi = null;
+    }
+  }
+  if (!vocabularyApi && typeof require === "function") {
+    try {
+      vocabularyApi = require("./clinical-vocabulary.js");
+    } catch (error) {
+      vocabularyApi = null;
+    }
+  }
+
+  const LEGACY_DISEASE_ID_ALIASES = Object.freeze({
+    crpc_metastatic_postarpi_taxane_naive_psma_positive: "crpc_metastatic_postarpi",
+    crpc_metastatic_postarpi_post_taxane: "crpc_metastatic_postarpi",
+    crpc_metastatic_brca_mutated: "crpc_metastatic_postarpi",
+    crpc_metastatic_hrr_mutated_nonbrca: "crpc_metastatic_postarpi",
+    cspc_brca2_mutated: "cspc_general",
+    cspc_high_volume_chaarted: "cspc_high_volume",
+    cspc_low_volume: "cspc_general",
+    crpc_neuroendocrine_small_cell: "crpc_general",
+    nmibc_bcg_unresponsive_papillary_only: "nmibc_bcg_unresponsive",
+    nmibc_bcg_unresponsive_cis: "nmibc_bcg_unresponsive",
+    nmibc_bcg_intolerant: "nmibc_general",
+    nmibc_bcg_exposed_not_unresponsive: "nmibc_general",
+    metastatic_maintenance_post_platinum_nonprogressing: "metastatic_general",
+    metastatic_fgfr3_altered_post_systemic: "metastatic_2l_plus",
+    metastatic_1l_all_comers_ev_pembro: "metastatic_1l_general",
+    metastatic_ccrcc_post_pd1_vegf_tki_belzutifan: "metastatic_ccrcc_2l_io_experienced",
+    seminoma_post_chemo_residual_gt3cm_pet_timing: "seminoma_post_first_line",
+    seminoma_post_chemo_residual_le3cm: "seminoma_post_first_line",
+    nsgct_post_chemo_residual_mass_gt1cm_markers_normalizing: "nsgct_post_first_line",
+    gct_first_salvage: "gct_advanced_general",
+    gct_post_hdct_relapse: "gct_advanced_general",
+    seminoma_stage1_surveillance: "seminoma_stage1",
+    nsgct_stage1_lvi_positive: "nsgct_stage1",
+    nsgct_stage1_lvi_negative: "nsgct_stage1"
+  });
+
   const LOCATION_TERMS = [
     "san diego",
     "la jolla",
@@ -47,6 +93,74 @@
 
   function normalizeWhitespace(value) {
     return (value || "").toString().replace(/\s+/g, " ").trim();
+  }
+
+  const EXPLICIT_THERAPIES = Object.freeze([
+    "adt",
+    "enzalutamide",
+    "abiraterone",
+    "apalutamide",
+    "darolutamide",
+    "docetaxel",
+    "cabazitaxel",
+    "platinum",
+    "pembrolizumab",
+    "nivolumab",
+    "ipilimumab",
+    "cabozantinib",
+    "axitinib",
+    "lenvatinib",
+    "olaparib",
+    "rucaparib",
+    "niraparib",
+    "talazoparib",
+    "radioligand"
+  ]);
+
+  function replaceRangeWithSpaces(characters, start, end) {
+    for (let index = Math.max(0, start); index < Math.min(characters.length, end); index += 1) {
+      if (!/\s/.test(characters[index])) characters[index] = " ";
+    }
+  }
+
+  function buildAssertionText(text) {
+    const source = String(text || "");
+    // split("") preserves JavaScript UTF-16 indexing used by RegExp offsets.
+    const characters = source.split("");
+    const warnings = [];
+    const mask = (pattern, code, message) => {
+      const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+      const matcher = new RegExp(pattern.source, flags);
+      let match;
+      while ((match = matcher.exec(source)) !== null) {
+        replaceRangeWithSpaces(characters, match.index, match.index + match[0].length);
+        if (!warnings.some(item => item.code === code)) warnings.push({ code, message });
+        if (match[0].length === 0) matcher.lastIndex += 1;
+      }
+    };
+
+    // These contexts are preserved in the raw narrative and ignored-text audit,
+    // but they cannot create patient eligibility facts.
+    mask(/\bfamily history of\b[^.;\n]*/i, "family_history_excluded", "Family-history statements were not treated as facts about the patient.");
+    mask(/\b(?:mother|father|sister|brother|daughter|son|grandmother|grandfather)\s+(?:has|had|was diagnosed with)\b[^.;\n]*/i, "family_history_excluded", "Family-history statements were not treated as facts about the patient.");
+    mask(/\b(?:cannot|can't|could not)\s+rule\s+out\b[^.;\n]*/i, "uncertain_assertion_excluded", "Uncertain disease assertions were not treated as confirmed patient facts.");
+    mask(/\b(?:possible|possibly|suspected|concern for|may have)\s+(?:new\s+)?(?:brain\s+)?(?:metastatic\s+disease|metastasis|metastases|recurrence|progression|cancer|tumou?r)\b[^.;\n]*/i, "uncertain_assertion_excluded", "Uncertain disease assertions were not treated as confirmed patient facts.");
+
+    const therapyAlternation = EXPLICIT_THERAPIES
+      .map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?"))
+      .join("|");
+    mask(
+      new RegExp(`\\b(?:considering|planning|planned\\s+(?:for|to\\s+start)?|may\\s+start|might\\s+start|candidate\\s+for|recommended|will\\s+start|to\\s+start)\\s+(?:treatment\\s+with\\s+)?(?:${therapyAlternation})\\b`, "i"),
+      "planned_treatment_not_prior",
+      "Planned or hypothetical treatment was not counted as prior exposure."
+    );
+    mask(
+      new RegExp(`\\b(?:${therapyAlternation})\\s+(?:is\\s+)?(?:planned|being\\s+considered|under\\s+consideration)\\b`, "i"),
+      "planned_treatment_not_prior",
+      "Planned or hypothetical treatment was not counted as prior exposure."
+    );
+
+    return { text: characters.join(""), warnings };
   }
 
   function normalizeToken(value) {
@@ -148,15 +262,40 @@
   function createTherapyHistory() {
     return {
       receivedTherapies: [],
-      progressedOnTherapies: []
+      progressedOnTherapies: [],
+      plannedTherapies: []
     };
+  }
+
+  function detectDemographics(text) {
+    const agePatterns = [
+      /\b(\d{1,3})[- ](?:year|yr)s?[- ]old\b/i,
+      /\bage(?:d)?\s*(?:is|:|=)?\s*(\d{1,3})\s*(?:years?|yrs?)?\b/i,
+      /\b(\d{1,3})\s*(?:yo|y\/o)\b/i
+    ];
+    let ageYears = null;
+    for (const pattern of agePatterns) {
+      const match = pattern.exec(text);
+      pattern.lastIndex = 0;
+      const age = match ? Number(match[1]) : NaN;
+      if (Number.isInteger(age) && age >= 0 && age <= 120) {
+        ageYears = age;
+        break;
+      }
+    }
+
+    let administrativeSex = "";
+    if (/\b(?:female|woman)\b/i.test(text)) administrativeSex = "female";
+    else if (/\b(?:male|man)\b/i.test(text)) administrativeSex = "male";
+    return { ageYears, administrativeSex };
   }
 
   function createScreeningFacts() {
     return {
       ecogStatus: "",
       labState: "",
-      organFunctionState: ""
+      organFunctionState: "",
+      laboratoryResults: []
     };
   }
 
@@ -228,6 +367,12 @@
       return context;
     }
 
+    if (/(?:\bmetastatic\b[^.]{0,80}\bprostate\b|\bprostate\b[^.]{0,80}\bmetastatic\b)/i.test(text)) {
+      context.diseaseGroup = "metastatic_unspecified";
+      context.diseaseLabel = "Metastatic prostate cancer — castration state unknown";
+      return context;
+    }
+
     if (/localized|newly diagnosed prostate cancer|gleason|radiation candidate|ct2/i.test(text)) {
       context.diseaseGroup = "localized";
       context.diseaseLabel = "Localized prostate cancer";
@@ -283,7 +428,7 @@
       };
     }
 
-    if (/wild[- ]type|hrr wild[- ]type|brca negative|hrr negative/i.test(text)) {
+    if (/(?:hrr|brca(?:1|2)?|homologous recombination)[^.]{0,24}(?:wild[- ]type|negative)|(?:wild[- ]type|negative)[^.]{0,24}(?:hrr|brca(?:1|2)?|homologous recombination)/i.test(text)) {
       return { value: "negative", label: "HRR wild-type" };
     }
 
@@ -336,7 +481,7 @@
       };
     }
 
-    const scoreMatch = text.match(/score[: ]+([0-9]+(?:\.[0-9]+)?)/i);
+    const scoreMatch = text.match(/(?:genomic|decipher|oncotype|prolaris|artera)[^.]{0,24}score[: ]+([0-9]+(?:\.[0-9]+)?)/i);
     if (scoreMatch) {
       return {
         value: "available",
@@ -360,12 +505,22 @@
       return "low_volume";
     }
 
+    if (/(?:visceral (?:metastases|disease)|liver metastases|lung metastases)/i.test(text) && !/(?:no|without|absent)[^.]{0,20}visceral (?:metastases|disease)/i.test(text)) {
+      return "high_volume";
+    }
+
     const boneMatch = text.match(/(\d+)\s+(?:bone mets?|bone metastases|bone lesions?)/i);
     if (boneMatch) {
       const count = Number(boneMatch[1]);
       if (Number.isFinite(count)) {
         if (count >= 4) {
-          return "high_volume";
+          if (/(?:rib|femur|humerus|skull|calvarium|appendicular|beyond (?:the )?(?:spine|vertebral bodies|pelvis))/i.test(text)) {
+            return "high_volume";
+          }
+          if (/(?:confined|limited) to (?:the )?(?:spine|vertebral bodies)(?: and |\/)(?:the )?pelvis|no visceral disease/i.test(text)) {
+            return "low_volume";
+          }
+          return "possible_high_volume";
         }
         if (count > 0 && count <= 3) {
           return "low_volume";
@@ -567,35 +722,24 @@
 
   function detectExplicitTherapyMentions(text) {
     const mentions = [];
-    const explicitTherapies = [
-      "adt",
-      "enzalutamide",
-      "abiraterone",
-      "apalutamide",
-      "darolutamide",
-      "docetaxel",
-      "cabazitaxel",
-      "platinum",
-      "pembrolizumab",
-      "nivolumab",
-      "ipilimumab",
-      "cabozantinib",
-      "axitinib",
-      "lenvatinib",
-      "olaparib",
-      "rucaparib",
-      "niraparib",
-      "talazoparib",
-      "radioligand"
-    ];
-
-    explicitTherapies.forEach(therapy => {
+    EXPLICIT_THERAPIES.forEach(therapy => {
       const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
       if (!hasExplicitNegativeTherapyContext(text, therapy) && new RegExp(escaped, "i").test(text)) {
         addTherapy(mentions, therapy);
       }
     });
 
+    return mentions;
+  }
+
+  function detectPlannedTherapyMentions(text) {
+    const mentions = [];
+    EXPLICIT_THERAPIES.forEach(therapy => {
+      const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
+      const before = new RegExp(`\\b(?:considering|planning|planned\\s+(?:for|to\\s+start)?|may\\s+start|might\\s+start|candidate\\s+for|recommended|will\\s+start|to\\s+start)\\s+(?:treatment\\s+with\\s+)?${escaped}\\b`, "i");
+      const after = new RegExp(`\\b${escaped}\\s+(?:is\\s+)?(?:planned|being\\s+considered|under\\s+consideration)\\b`, "i");
+      if (before.test(text) || after.test(text)) addTherapy(mentions, therapy);
+    });
     return mentions;
   }
 
@@ -658,6 +802,10 @@
   }
 
   function detectLabState(text) {
+    if (/\b(?:labs?|cbc|cmp|hematologic(?:al)? (?:function|profile)|bone marrow function)\b[^.]{0,24}\b(?:not normal|abnormal|not within normal limits|inadequate)\b|\b(?:not normal|abnormal) (?:cbc|cmp|hemoglobin|platelets|anc)\b/i.test(text)) {
+      return "abnormal_unspecified";
+    }
+
     if (/\b(?:labs?|cbc|cmp|hematologic(?:al)? (?:function|profile)|bone marrow function)\b[^.]{0,24}\b(?:normal|wnl|within normal limits|adequate|acceptable)\b|normal (?:cbc|cmp|hemoglobin|platelets|anc)\b/i.test(text)) {
       return "within_range";
     }
@@ -671,6 +819,68 @@
     }
 
     return "";
+  }
+
+  function normalizeLabDate(sourceText) {
+    const match = String(sourceText || "").match(/(?:\bon\b|\bas of\b|\bdated\b)?\s*(20\d{2}[-/]\d{1,2}[-/]\d{1,2})\b/i);
+    if (!match) return null;
+    const normalized = match[1].replace(/\//g, "-");
+    const date = new Date(`${normalized}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  function normalizeLabAmount(amountText, unitText, family) {
+    const amount = Number(String(amountText || "").replace(/,/g, ""));
+    if (!Number.isFinite(amount)) return null;
+    const unit = String(unitText || "").toLowerCase().replace(/\s+/g, "");
+    if (family === "cell_count") {
+      if (/10\^?9|10⁹|x10|×10|k\/?(?:ul|µl)/i.test(unit)) {
+        return { value: amount * 1000, unit: "cells/uL", normalization: `${amountText} ${unitText} converted to cells/uL` };
+      }
+      return { value: amount, unit: "cells/uL", normalization: null };
+    }
+    if (family === "uln_ratio") return { value: amount, unit: "xULN", normalization: null };
+    return { value: amount, unit: String(unitText || "").replace(/\s+/g, " ").trim(), normalization: null };
+  }
+
+  function detectNumericLabResults(text) {
+    const source = String(text || "");
+    const specs = [
+      { concept: "hemoglobinGdl", display: "Hemoglobin", family: "absolute", names: "(?:hemoglobin|hgb)", units: "(?:g\\s*\\/\\s*dL)" },
+      { concept: "absoluteNeutrophilCount", display: "Absolute neutrophil count", family: "cell_count", names: "(?:absolute\\s+neutrophil\\s+count|ANC)", units: "(?:cells?\\s*\\/\\s*(?:uL|µL|mm3|mm\\^3)|\\/\\s*(?:uL|µL|mm3|mm\\^3)|[Kk]\\s*\\/\\s*(?:uL|µL)|(?:x|×)\\s*10\\s*(?:\\^?9|⁹)\\s*\\/\\s*L)" },
+      { concept: "plateletCount", display: "Platelet count", family: "cell_count", names: "(?:platelet(?:s|\\s+count)?)", units: "(?:cells?\\s*\\/\\s*(?:uL|µL|mm3|mm\\^3)|\\/\\s*(?:uL|µL|mm3|mm\\^3)|[Kk]\\s*\\/\\s*(?:uL|µL)|(?:x|×)\\s*10\\s*(?:\\^?9|⁹)\\s*\\/\\s*L)" },
+      { concept: "totalBilirubinMgDl", display: "Total bilirubin", family: "absolute", names: "(?:total\\s+bilirubin|bilirubin)", units: "(?:mg\\s*\\/\\s*dL)" },
+      { concept: "totalBilirubinUlnRatio", display: "Total bilirubin (ULN ratio)", family: "uln_ratio", names: "(?:total\\s+bilirubin|bilirubin)", units: "(?:(?:x|×)\\s*(?:the\\s+)?ULN)" },
+      { concept: "astUnitsL", display: "AST", family: "absolute", names: "(?:AST|aspartate\\s+aminotransferase)", units: "(?:U\\s*\\/\\s*L)" },
+      { concept: "astUlnRatio", display: "AST (ULN ratio)", family: "uln_ratio", names: "(?:AST|aspartate\\s+aminotransferase)", units: "(?:(?:x|×)\\s*(?:the\\s+)?ULN)" },
+      { concept: "altUnitsL", display: "ALT", family: "absolute", names: "(?:ALT|alanine\\s+aminotransferase)", units: "(?:U\\s*\\/\\s*L)" },
+      { concept: "altUlnRatio", display: "ALT (ULN ratio)", family: "uln_ratio", names: "(?:ALT|alanine\\s+aminotransferase)", units: "(?:(?:x|×)\\s*(?:the\\s+)?ULN)" },
+      { concept: "creatinineClearanceMlMin", display: "Creatinine clearance", family: "absolute", names: "(?:creatinine\\s+clearance|CrCl)", units: "(?:mL\\s*\\/\\s*min(?:\\s*\\/\\s*1\\.73\\s*m2)?)" },
+      { concept: "egfrMlMin", display: "eGFR", family: "absolute", names: "(?:eGFR|estimated\\s+glomerular\\s+filtration\\s+rate)", units: "(?:mL\\s*\\/\\s*min(?:\\s*\\/\\s*1\\.73\\s*m2)?)" },
+      { concept: "serumCreatinineMgDl", display: "Serum creatinine", family: "absolute", names: "(?:serum\\s+creatinine|creatinine)", units: "(?:mg\\s*\\/\\s*dL)" }
+    ];
+    const results = [];
+    specs.forEach(spec => {
+      const pattern = new RegExp(`\\b${spec.names}\\b\\s*(?:is|of|=|:)?\\s*([0-9]+(?:,[0-9]{3})*(?:\\.[0-9]+)?)\\s*(${spec.units})`, "gi");
+      let match;
+      while ((match = pattern.exec(source))) {
+        const normalized = normalizeLabAmount(match[1], match[2], spec.family);
+        if (!normalized) continue;
+        const nearby = source.slice(Math.max(0, match.index - 24), Math.min(source.length, match.index + match[0].length + 32));
+        results.push({
+          concept: spec.concept,
+          display: spec.display,
+          value: normalized.value,
+          unit: normalized.unit,
+          normalization: normalized.normalization,
+          observedAt: normalizeLabDate(nearby),
+          sourceSpan: schemaApi?.makeSourceSpan
+            ? schemaApi.makeSourceSpan(match[0], match.index, match.index + match[0].length)
+            : { field: "patientNarrative", text: match[0], start: match.index, end: match.index + match[0].length }
+        });
+      }
+    });
+    return results.sort((left, right) => left.sourceSpan.start - right.sourceSpan.start);
   }
 
   function detectOrganFunctionState(text) {
@@ -749,11 +959,11 @@
   }
 
   function detectFgfr3Status(text) {
+    if (/fgfr3.{0,32}(?:wild[- ]type|negative|mutation negative|not detected)|no fgfr3 alteration|without fgfr3 alteration/i.test(text)) {
+      return "wild_type";
+    }
     if (/fgfr3.{0,24}(susceptible alteration|mutation|mutated|fusion|altered|positive)|erdafitinib candidate|fgfr inhibitor candidate/i.test(text)) {
       return "susceptible_alteration";
-    }
-    if (/fgfr3.{0,24}(wild[- ]type|negative)|no fgfr3 alteration|without fgfr3 alteration/i.test(text)) {
-      return "wild_type";
     }
     return "";
   }
@@ -883,7 +1093,7 @@
   }
 
   function detectPriorIo(text) {
-    if (/io[- ]naive|no prior io|no prior immunotherapy|no prior pd-?1|no prior pd-?l1/i.test(text)) {
+    if (/io[- ]naive|no prior io|no prior immunotherapy|no prior pd-?1|no prior pd-?l1|no prior (?:nivolumab|pembrolizumab|ipilimumab|atezolizumab|avelumab|durvalumab)/i.test(text)) {
       return "no";
     }
     if (/prior io|prior immunotherapy|prior pd-?1|prior pd-?l1|received nivolumab|received pembrolizumab|received ipilimumab|post[- ]io|after (?:nivolumab|pembrolizumab|ipilimumab)|progressed on (?:nivolumab|pembrolizumab|ipilimumab)|\b(?:nivolumab|pembrolizumab|ipilimumab)\b/i.test(text)) {
@@ -893,7 +1103,7 @@
   }
 
   function detectPriorVegfTki(text) {
-    if (/vegf[- ]tki[- ]naive|tki[- ]naive|no prior vegf|no prior tki|no prior vegf\/tki/i.test(text)) {
+    if (/vegf[- ]tki[- ]naive|tki[- ]naive|no prior vegf|no prior tki|no prior vegf\/tki|no prior (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib|tivozanib)/i.test(text)) {
       return "no";
     }
     if (/prior vegf|prior tki|prior vegf\/tki|received cabozantinib|received axitinib|received lenvatinib|received sunitinib|received pazopanib|post[- ]tki|after (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)|progressed on (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)|\b(?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)\b/i.test(text)) {
@@ -916,9 +1126,9 @@
   }
 
   function detectVhlStatus(text) {
-    if (/von hippel[- ]lindau|\bvhl\b.{0,16}(mut|altered|associated|disease)|vhl-associated/i.test(text)) {
-      return "vhl_altered";
-    }
+    if (/(?:germline|hereditary)[^.]{0,24}(?:vhl|von hippel[- ]lindau)|(?:vhl|von hippel[- ]lindau)[^.]{0,24}(?:germline|hereditary|disease|syndrome)/i.test(text)) return "vhl_disease_germline";
+    if (/(?:somatic|tumou?r)[^.]{0,24}vhl|vhl[^.]{0,24}(?:somatic|tumou?r mutation|loss|inactivation)/i.test(text)) return "somatic_vhl_mutation";
+    if (/von hippel[- ]lindau|\bvhl\b.{0,16}(mut|altered|associated|disease)|vhl-associated/i.test(text)) return "vhl_unspecified";
     return "";
   }
 
@@ -940,11 +1150,11 @@
   }
 
   function detectTesticularHistology(text) {
+    if (/mixed germ cell|mixed nonseminoma|mixed[^.;,\n]{0,32}seminoma[^.;,\n]{0,32}(?:nsgct|non[- ]?seminomatous)|seminoma\s+(?:and|with)\s+non[- ]?seminomatous/i.test(text)) {
+      return "mixed_seminoma_nsgct";
+    }
     if (/pure seminoma|seminoma only|\bseminoma\b/i.test(text)) {
       return "pure_seminoma";
-    }
-    if (/mixed germ cell|mixed nonseminoma|mixed seminoma.*nsgct/i.test(text)) {
-      return "mixed_gct";
     }
     if (/nonseminoma|non[- ]seminomatous|\bnsgct\b|yolk sac|embryonal|choriocarcinoma|teratoma/i.test(text)) {
       return "nsgct";
@@ -954,18 +1164,18 @@
 
   function detectClinicalStage(text) {
     if (/stage is|clinical stage is|persistently elevated markers/i.test(text)) {
-      return "stage_is";
+      return "stage_1s";
     }
-    if (/stage ia|stage ib|clinical stage i\b|stage i\b/i.test(text)) {
-      if (/stage ia/i.test(text)) {
-        return "stage_1a";
-      }
-      return "stage_1_unspecified";
-    }
-    if (/stage iia|stage iib|cs iia|cs iib/i.test(text)) {
-      return "stage_2a_2b";
-    }
-    if (/stage iic|stage iii|advanced gct|metastatic gct|metastatic seminoma|metastatic nonseminoma/i.test(text)) {
+    if (/stage ia|cs ia/i.test(text)) return "stage_1a";
+    if (/stage ib|cs ib/i.test(text)) return "stage_1b";
+    if (/clinical stage i\b|stage i\b|cs i\b/i.test(text)) return "stage_1_unspecified";
+    if (/stage iia|cs iia/i.test(text)) return "stage_2a";
+    if (/stage iib|cs iib/i.test(text)) return "stage_2b";
+    if (/stage iic|cs iic/i.test(text)) return "stage_2c";
+    if (/stage iiia|cs iiia/i.test(text)) return "stage_3a";
+    if (/stage iiib|cs iiib/i.test(text)) return "stage_3b";
+    if (/stage iiic|cs iiic/i.test(text)) return "stage_3c";
+    if (/stage iii|advanced gct|metastatic gct|metastatic seminoma|metastatic nonseminoma/i.test(text)) {
       return "stage_3_unspecified";
     }
     return "";
@@ -1053,10 +1263,10 @@
 
   function detectStage1RiskFactors(text) {
     if (/no lymphovascular invasion|without lymphovascular invasion|\blvi[- ]negative|\blvi negative|no lvi/i.test(text)) {
-      return "absent";
+      return "without_risk_factors";
     }
     if (/lymphovascular invasion|\blvi\b|spermatic cord invasion|rete testis|risk factors?/i.test(text)) {
-      return "present";
+      return "with_risk_factors";
     }
     return "";
   }
@@ -1120,8 +1330,10 @@
   }
 
   function detectLocationTerms(text) {
-    const lowered = text.toLowerCase();
-    return LOCATION_TERMS.filter(term => lowered.includes(term));
+    return LOCATION_TERMS.filter(term => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, "i").test(text);
+    });
   }
 
   function detectTreatmentPreferences(text) {
@@ -1155,24 +1367,24 @@
         } else if (axes.metastaticStatus === "metastatic") {
           if (axes.priorArpi === "yes") {
             if (axes.priorDocetaxel === "no" && axes.psmaStatus === "positive") {
-              ids.push("crpc_metastatic_postARPI_taxane_naive_psma_positive");
+              ids.push("crpc_metastatic_postarpi_taxane_naive_psma_positive");
             }
             if (axes.priorDocetaxel === "yes") {
-              ids.push("crpc_metastatic_postARPI_post_taxane");
+              ids.push("crpc_metastatic_postarpi_post_taxane");
             }
             if (axes.hrrGene === "brca1" || axes.hrrGene === "brca2" || axes.hrrGene === "brca_unspecified") {
               ids.push("crpc_metastatic_brca_mutated");
             } else if (axes.biomarkerHrr === "positive") {
               ids.push("crpc_metastatic_hrr_mutated_nonbrca");
             }
-            ids.push("crpc_metastatic_postARPI", "crpc_general");
+            ids.push("crpc_metastatic_postarpi", "crpc_general");
           } else if (axes.priorArpi === "no") {
-            ids.push("crpc_metastatic_preARPI", "crpc_general");
+            ids.push("crpc_metastatic_prearpi", "crpc_general");
           } else {
-            ids.push("crpc_metastatic_preARPI", "crpc_metastatic_postARPI", "crpc_general");
+            ids.push("crpc_metastatic_prearpi", "crpc_metastatic_postarpi", "crpc_general");
           }
         } else {
-          ids.push("crpc_nonmetastatic", "crpc_metastatic_preARPI", "crpc_metastatic_postARPI", "crpc_general");
+          ids.push("crpc_nonmetastatic", "crpc_metastatic_prearpi", "crpc_metastatic_postarpi", "crpc_general");
         }
       }
 
@@ -1204,7 +1416,10 @@
       ids.push(...parsed.diseaseSettingIds);
     }
 
-    parsed.diseaseSettingIds = Array.from(new Set(ids.filter(Boolean)));
+    const allowed = new Set(vocabularyApi?.diseaseSettings?.[parsed.cancerType] || []);
+    const mapped = ids.filter(Boolean).map(id => LEGACY_DISEASE_ID_ALIASES[id] || id);
+    parsed.ignoredDiseaseSettingIds = Array.from(new Set(ids.filter(id => id && !allowed.has(id))));
+    parsed.diseaseSettingIds = Array.from(new Set(mapped.filter(id => !allowed.size || allowed.has(id))));
   }
 
   function parseProstate(parsed, text) {
@@ -1579,11 +1794,11 @@
       parsed.notes.push("AFP elevation treated as NSGCT");
     }
 
-    if (!parsed.clinicalAxes.clinicalStage && persistentMarkersAfterOrchiectomy === "yes" && (parsed.clinicalAxes.histology === "nsgct" || parsed.clinicalAxes.histology === "mixed_gct")) {
-      parsed.clinicalAxes.clinicalStage = "stage_is";
+    if (!parsed.clinicalAxes.clinicalStage && persistentMarkersAfterOrchiectomy === "yes" && (parsed.clinicalAxes.histology === "nsgct" || parsed.clinicalAxes.histology === "mixed_seminoma_nsgct")) {
+      parsed.clinicalAxes.clinicalStage = "stage_1s";
     }
 
-    if (!parsed.clinicalAxes.igcccgRisk && parsed.clinicalAxes.primarySite === "mediastinal" && (parsed.clinicalAxes.histology === "nsgct" || parsed.clinicalAxes.histology === "mixed_gct")) {
+    if (!parsed.clinicalAxes.igcccgRisk && parsed.clinicalAxes.primarySite === "mediastinal" && (parsed.clinicalAxes.histology === "nsgct" || parsed.clinicalAxes.histology === "mixed_seminoma_nsgct")) {
       parsed.clinicalAxes.igcccgRisk = "poor";
     }
 
@@ -1610,7 +1825,7 @@
           pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_post_chemo_residual_le3cm"]);
         }
         pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_post_first_line", "gct_advanced_general"]);
-      } else if (histology === "nsgct" || histology === "mixed_gct") {
+      } else if (histology === "nsgct" || histology === "mixed_seminoma_nsgct") {
         parsed.diseaseLabel = "NSGCT — post first-line management";
         const residualSize = Number(parsed.clinicalAxes.gctResidualMassSizeCm);
         if (Number.isFinite(residualSize) && residualSize > 1 && ["normal", "normalizing"].includes(parsed.clinicalAxes.gctMarkerTrend || parsed.clinicalAxes.markerStatus)) {
@@ -1634,7 +1849,7 @@
           }
           pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_recurrent_2l", "gct_advanced_general"]);
         }
-      } else if (histology === "nsgct" || histology === "mixed_gct") {
+      } else if (histology === "nsgct" || histology === "mixed_seminoma_nsgct") {
         if (lines === "2+" || parsed.clinicalAxes.priorHdct === "yes") {
           parsed.diseaseLabel = "NSGCT — 3L+";
           if (parsed.clinicalAxes.priorHdct === "yes") {
@@ -1652,20 +1867,20 @@
         parsed.diseaseLabel = "Recurrent GCT";
         pushDiseaseIds(parsed.diseaseSettingIds, ["gct_advanced_general"]);
       }
-    } else if (stage === "stage_is" && (histology === "nsgct" || histology === "mixed_gct")) {
+    } else if (stage === "stage_1s" && (histology === "nsgct" || histology === "mixed_seminoma_nsgct")) {
       parsed.diseaseGroup = "stage_is";
       parsed.diseaseLabel = "NSGCT — stage IS";
       pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage_is", "gct_advanced_general"]);
-    } else if (stage === "stage_1a" || stage === "stage_1_unspecified") {
+    } else if (["stage_1a", "stage_1b", "stage_1_unspecified"].includes(stage)) {
       parsed.diseaseGroup = "stage1";
       if (histology === "pure_seminoma") {
         parsed.diseaseLabel = "Seminoma — stage I";
         pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_stage1_surveillance", "seminoma_stage1", "gct_stage1_general"]);
-      } else if (histology === "nsgct" || histology === "mixed_gct") {
+      } else if (histology === "nsgct" || histology === "mixed_seminoma_nsgct") {
         parsed.diseaseLabel = "NSGCT — stage I";
-        if (parsed.clinicalAxes.stage1RiskFactors === "present") {
+        if (parsed.clinicalAxes.stage1RiskFactors === "with_risk_factors") {
           pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1_lvi_positive"]);
-        } else if (parsed.clinicalAxes.stage1RiskFactors === "absent") {
+        } else if (parsed.clinicalAxes.stage1RiskFactors === "without_risk_factors") {
           pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1_lvi_negative"]);
         }
         pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage1", "gct_stage1_general"]);
@@ -1673,24 +1888,24 @@
         parsed.diseaseLabel = "GCT — stage I";
         pushDiseaseIds(parsed.diseaseSettingIds, ["gct_stage1_general"]);
       }
-    } else if (stage === "stage_2a_2b") {
+    } else if (["stage_2a", "stage_2b"].includes(stage)) {
       parsed.diseaseGroup = "stage2";
       if (histology === "pure_seminoma") {
         parsed.diseaseLabel = "Seminoma — stage IIA/IIB";
         pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_stage2a_2b", "gct_advanced_general"]);
-      } else if (histology === "nsgct" || histology === "mixed_gct") {
+      } else if (histology === "nsgct" || histology === "mixed_seminoma_nsgct") {
         parsed.diseaseLabel = "NSGCT — stage IIA/IIB";
         pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_stage2a_2b", "gct_advanced_general"]);
       } else {
         parsed.diseaseLabel = "GCT — stage IIA/IIB";
         pushDiseaseIds(parsed.diseaseSettingIds, ["gct_advanced_general"]);
       }
-    } else if (stage === "stage_3_unspecified" || /advanced|metastatic/i.test(text)) {
+    } else if (["stage_2c", "stage_3a", "stage_3b", "stage_3c", "stage_3_unspecified"].includes(stage) || /advanced|metastatic/i.test(text)) {
       parsed.diseaseGroup = "advanced";
       if (histology === "pure_seminoma") {
         parsed.diseaseLabel = "Seminoma — advanced";
         pushDiseaseIds(parsed.diseaseSettingIds, ["seminoma_stage2c_3", "gct_advanced_general"]);
-      } else if (histology === "nsgct" || histology === "mixed_gct") {
+      } else if (histology === "nsgct" || histology === "mixed_seminoma_nsgct") {
         if (parsed.clinicalAxes.igcccgRisk === "good") {
           parsed.diseaseLabel = "NSGCT — good-risk advanced";
           pushDiseaseIds(parsed.diseaseSettingIds, ["nsgct_good_risk_advanced", "gct_advanced_general"]);
@@ -1765,10 +1980,15 @@
     }
   }
 
+  function populatePlannedTherapies(parsed, rawText) {
+    detectPlannedTherapyMentions(rawText).forEach(therapy => addTherapy(parsed.therapyHistory.plannedTherapies, therapy));
+  }
+
   function populateScreeningFacts(parsed, text) {
     parsed.screeningFacts.ecogStatus = detectEcogStatus(text);
     parsed.screeningFacts.labState = detectLabState(text);
     parsed.screeningFacts.organFunctionState = detectOrganFunctionState(text);
+    parsed.screeningFacts.laboratoryResults = detectNumericLabResults(text);
   }
 
   function addTemporalChips(parsed) {
@@ -1811,6 +2031,469 @@
     if (screening.organFunctionState === "marked_impairment") addChip(parsed.chips, "Screening", "Marked organ impairment");
   }
 
+  function findSourceSpan(text, patterns, assertionText) {
+    const searchable = assertionText == null ? text : assertionText;
+    for (const pattern of patterns || []) {
+      const match = pattern.exec(searchable);
+      pattern.lastIndex = 0;
+      if (match) {
+        const sourceValue = text.slice(match.index, match.index + match[0].length);
+        return schemaApi?.makeSourceSpan
+          ? schemaApi.makeSourceSpan(sourceValue, match.index, match.index + match[0].length)
+          : { field: "patientNarrative", text: sourceValue, start: match.index, end: match.index + match[0].length };
+      }
+    }
+    return schemaApi?.makeSourceSpan
+      ? schemaApi.makeSourceSpan("", 0, 0)
+      : { field: "patientNarrative", text: "", start: 0, end: 0 };
+  }
+
+  function eventTimeNearSpan(text, span) {
+    if (!span || !Number.isInteger(span.start)) return null;
+    const leftBoundary = Math.max(text.lastIndexOf(".", span.start), text.lastIndexOf(";", span.start), text.lastIndexOf("\n", span.start));
+    const rightCandidates = [text.indexOf(".", span.end), text.indexOf(";", span.end), text.indexOf("\n", span.end)]
+      .filter(value => value >= 0);
+    const rightBoundary = rightCandidates.length ? Math.min(...rightCandidates) : text.length;
+    const clause = text.slice(Math.max(0, leftBoundary + 1), rightBoundary);
+    const match = clause.match(/\b(20\d{2}|19\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])\b/);
+    if (!match) return null;
+    const iso = `${match[1]}-${match[2]}-${match[3]}T00:00:00.000Z`;
+    return Number.isNaN(Date.parse(iso)) ? null : iso;
+  }
+
+  const AXIS_SOURCE_PATTERNS = {
+    bcgStatus: [/bcg[- ](?:unresponsive|refractory|resistant|intolerant|naive)/i, /after adequate bcg/i],
+    bcgAdequacy: [/adequate bcg|inadequate bcg|induction plus maintenance/i],
+    bcgTimingPattern: [/within \d+ (?:months?|years?) of bcg|bcg[^.]{0,30}(?:recurrence|persistent)/i],
+    cisplatinStatus: [/cisplatin[- ](?:eligible|ineligible|fit|unfit)/i],
+    cisPapillaryPattern: [/carcinoma in situ|\bcis\b|papillary|high[- ]grade (?:ta|t1)/i],
+    castrationStatus: [/castration[- ](?:resistant|sensitive)|hormone[- ]sensitive|\bmcrpc\b|\bmcspc\b|\bmhspc\b|\bnmcrpc\b/i],
+    metastaticStatus: [/non[- ]metastatic|\bmetastatic\b|\bm0\b|\bm1\b/i],
+    diseaseVolume: [/high[- ]volume|low[- ]volume|oligometastatic|\d+ bone (?:mets|metastases|lesions)|visceral (?:disease|metastases)/i],
+    priorArpi: [/no prior arpi|arpi[- ]naive|prior arpi|enzalutamide|abiraterone|apalutamide|darolutamide/i],
+    priorDocetaxel: [/no prior docetaxel|docetaxel[- ]naive|prior docetaxel|received docetaxel|progressed on[^.]{0,24}docetaxel/i],
+    hrrGene: [/brca\s*[12]?|atm|cdk12|palb2|chek2|hrr/i],
+    biomarkerHrr: [/(?:brca|hrr|homologous recombination)[^.]{0,24}(?:positive|negative|mutation|wild[- ]type)/i],
+    psmaStatus: [/psma[^.]{0,24}(?:positive|negative|avid)/i],
+    genomicClassifier: [/decipher|oncotype gps|prolaris|artera ai|genomic (?:risk )?classifier/i],
+    fgfr3Status: [/fgfr3[^.]{0,32}(?:mutation|fusion|altered|positive|negative|wild[- ]type|not detected)/i],
+    fgfrAlteration: [/fgfr[23]?[^.]{0,32}(?:mutation|fusion|altered|positive|negative|wild[- ]type)/i],
+    her2Status: [/(?:her2|erbb2)[^.]{0,24}(?:3\+|2\+|1\+|positive|negative|low|equivocal)/i],
+    histology: [/clear[- ]cell|non[- ]clear[- ]cell|papillary|chromophobe|medullary|collecting duct|seminoma|non[- ]seminomatous|nsgct|mixed germ cell/i],
+    imdcRisk: [/imdc[^.]{0,20}(?:favorable|intermediate|poor)/i],
+    priorSystemicLines: [/(?:no|one|two|\d+) prior (?:systemic )?(?:line|lines)|first[- ]line|second[- ]line|third[- ]line/i],
+    priorIo: [/no prior (?:io|immunotherapy|nivolumab|pembrolizumab|ipilimumab)|prior (?:io|immunotherapy)|(?:received|after|progressed on) (?:nivolumab|pembrolizumab|ipilimumab)/i],
+    priorVegfTki: [/no prior (?:vegf|tki|cabozantinib|axitinib|lenvatinib)|prior (?:vegf|tki)|(?:received|after|progressed on) (?:cabozantinib|axitinib|lenvatinib|sunitinib|pazopanib)/i],
+    nephrectomyStatus: [/post[- ]nephrectomy|prior nephrectomy|after nephrectomy|unresected primary|nephrectomy candidate/i],
+    vhlStatus: [/(?:germline|somatic|hereditary)?[^.]{0,16}(?:vhl|von hippel[- ]lindau)[^.]{0,20}(?:mutation|disease|syndrome|loss|altered)?/i],
+    metAlteration: [/\bmet\b[^.]{0,20}(?:mutation|amplification|altered)/i],
+    sarcomatoid: [/sarcomatoid/i],
+    clinicalStage: [/stage\s*(?:is|i[abc]?|ii[abc]?|iii[abc]?)/i],
+    igcccgRisk: [/igcccg[^.]{0,20}(?:good|intermediate|poor)/i],
+    primarySite: [/mediastinal|intracranial|retroperitoneal primary|extragonadal|testicular primary/i],
+    priorChemoLines: [/(?:no|one|two|\d+) prior (?:chemo|chemotherapy|lines?)|after (?:bep|ep|tip|veip|vip)|post[- ]first[- ]line/i],
+    priorHdct: [/no prior (?:hdct|high[- ]dose chemotherapy)|prior (?:hdct|high[- ]dose chemotherapy)|ti-?ce|stem cell rescue/i],
+    markerStatus: [/(?:afp|hcg|ldh|markers?)[^.]{0,24}(?:elevated|rising|normal|negative)/i],
+    stage1RiskFactors: [/no (?:lymphovascular invasion|lvi)|lymphovascular invasion|\blvi\b|spermatic cord invasion|rete testis/i]
+  };
+
+  function makeCandidateFact(options) {
+    if (schemaApi?.createPatientFact) {
+      return schemaApi.createPatientFact({
+        ...options,
+        extractor: { type: "rule", version: "patient-query-parser-2.0.0" },
+        confirmation: options.confirmation || "unreviewed"
+      });
+    }
+    return {
+      factId: `pf-${options.concept}-${options.sourceSpan?.start || 0}`,
+      concept: { system: "local", code: options.concept, display: options.display || options.concept },
+      predicate: options.predicate || "has",
+      value: options.value,
+      assertion: options.assertion || "present",
+      status: options.status || "current",
+      sourceSpan: options.sourceSpan,
+      confirmation: options.confirmation || "unreviewed"
+    };
+  }
+
+  function buildCandidateFacts(parsed, text, assertionText) {
+    const facts = [];
+    const add = options => {
+      const fact = makeCandidateFact(options);
+      if (!facts.some(existing => existing.factId === fact.factId)) facts.push(fact);
+    };
+
+    add({
+      concept: "cancer_type",
+      display: "Cancer type",
+      predicate: "has_diagnosis",
+      value: parsed.cancerType,
+      sourceSpan: findSourceSpan(text, CANCER_SIGNALS[parsed.cancerType]?.map(item => item.pattern) || [], assertionText)
+    });
+    if (parsed.diseaseLabel) {
+      add({
+        concept: "disease_context",
+        display: "Disease context",
+        predicate: "has_diagnosis",
+        value: parsed.diseaseGroup || parsed.diseaseLabel,
+        sourceSpan: findSourceSpan(text, [/\bnmcrpc\b|\bmcrpc\b|\bmcspc\b|\bmhspc\b|biochemical recurrence|\bbcr\b|localized|metastatic|high risk|unfavo[u]?rable intermediate/i], assertionText)
+      });
+    }
+
+    if (Number.isFinite(parsed.demographics?.ageYears)) {
+      add({
+        concept: "ageYears",
+        display: "Age",
+        predicate: "has",
+        value: parsed.demographics.ageYears,
+        sourceSpan: findSourceSpan(text, [/\b\d{1,3}[- ](?:year|yr)s?[- ]old\b/i, /\bage(?:d)?\s*(?:is|:|=)?\s*\d{1,3}\s*(?:years?|yrs?)?\b/i, /\b\d{1,3}\s*(?:yo|y\/o)\b/i], assertionText)
+      });
+    }
+    if (parsed.demographics?.administrativeSex) {
+      add({
+        concept: "administrativeSex",
+        display: "Administrative sex",
+        predicate: "has",
+        value: parsed.demographics.administrativeSex,
+        sourceSpan: findSourceSpan(text, [/\b(?:female|woman|male|man)\b/i], assertionText)
+      });
+    }
+
+    Object.entries(parsed.clinicalAxes || {}).forEach(([axis, value]) => {
+      if (value == null || value === "" || value === "unknown") return;
+      const assertion = ["no", "negative", "wild_type", "without_risk_factors"].includes(String(value).toLowerCase()) ? "absent" : "present";
+      add({
+        concept: axis,
+        display: axis.replace(/([a-z])([A-Z])/g, "$1 $2"),
+        predicate: "has",
+        value,
+        assertion,
+        sourceSpan: findSourceSpan(text, AXIS_SOURCE_PATTERNS[axis] || [new RegExp(String(value).replace(/_/g, "[ _-]"), "i")], assertionText)
+      });
+    });
+
+    (parsed.therapyHistory?.receivedTherapies || []).forEach(therapy => {
+      const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
+      const sourceSpan = findSourceSpan(text, [new RegExp(`(?:received|prior|on|after|treated with)?[^.;]{0,20}${escaped}`, "i")], assertionText);
+      add({
+        concept: "treatment_exposure",
+        display: "Treatment exposure",
+        predicate: "received",
+        value: therapy,
+        sourceSpan,
+        status: "historical",
+        temporality: { eventTime: eventTimeNearSpan(text, sourceSpan), relativeTo: "screening" }
+      });
+    });
+    (parsed.therapyHistory?.progressedOnTherapies || []).forEach(therapy => {
+      const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
+      const sourceSpan = findSourceSpan(text, [new RegExp(`progress(?:ed|ion)? (?:on|after|following)[^.;]{0,20}${escaped}`, "i")], assertionText);
+      add({
+        concept: "treatment_exposure",
+        display: "Treatment exposure",
+        predicate: "progressed_on",
+        value: therapy,
+        sourceSpan,
+        status: "historical",
+        temporality: { eventTime: eventTimeNearSpan(text, sourceSpan), relativeTo: "screening" }
+      });
+    });
+    (parsed.therapyHistory?.plannedTherapies || []).forEach(therapy => {
+      const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
+      const sourceSpan = findSourceSpan(text, [
+        new RegExp(`(?:considering|planning|planned|may start|might start|candidate for|recommended|will start|to start)[^.;]{0,24}${escaped}`, "i"),
+        new RegExp(`${escaped}[^.;]{0,24}(?:planned|being considered|under consideration)`, "i")
+      ]);
+      add({
+        concept: "treatment_exposure",
+        display: "Planned treatment (not prior exposure)",
+        predicate: "planned",
+        value: therapy,
+        assertion: "hypothetical",
+        status: "planned",
+        sourceSpan
+      });
+    });
+
+    const screeningMap = {
+      ecogStatus: [/\b(?:ecog|performance status|ps)\s*(?:of\s*)?[0-4](?:\s*(?:-|to|or|\/)\s*[0-4])?/i],
+      labState: [/\b(?:labs?|cbc|cmp|hemoglobin|platelets|anc)\b[^.]{0,28}\b(?:normal|abnormal|wnl|adequate|low|high)\b|\b(?:normal|abnormal) (?:labs?|cbc|cmp)/i],
+      organFunctionState: [/adequate organ function|renal function[^.]{0,20}(?:normal|adequate|impaired)|hepatic function[^.]{0,20}(?:normal|adequate|impaired)|dialysis|creatinine clearance[^.]{0,16}\d+/i]
+    };
+    Object.entries(parsed.screeningFacts || {}).forEach(([field, value]) => {
+      if (field === "laboratoryResults") return;
+      if (!value) return;
+      add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, sourceSpan: findSourceSpan(text, screeningMap[field] || [], assertionText) });
+    });
+
+    (parsed.screeningFacts?.laboratoryResults || []).forEach(result => {
+      add({
+        concept: result.concept,
+        display: result.display,
+        predicate: "has",
+        value: result.value,
+        unit: result.unit,
+        observedAt: result.observedAt,
+        normalization: result.normalization,
+        sourceSpan: result.sourceSpan
+      });
+    });
+
+    const temporalMap = {
+      sinceLastSystemicTherapyDays: [/last (?:systemic )?(?:therapy|treatment)[^.]{0,24}(?:ago|prior)|\d+\s*(?:days?|weeks?|months?)\s*(?:since|after) (?:systemic )?(?:therapy|treatment)/i],
+      sinceLastRadiationDays: [/last (?:radiation|radiotherapy|rt)[^.]{0,24}(?:ago|prior)|\d+\s*(?:days?|weeks?|months?)\s*(?:since|after) (?:radiation|radiotherapy|rt)/i],
+      sinceLastSurgeryDays: [/last surgery[^.]{0,24}(?:ago|prior)|\d+\s*(?:days?|weeks?|months?)\s*(?:since|after) surgery/i],
+      recentImagingDays: [/(?:imaging|scan|pet|ct|mri)[^.]{0,24}(?:ago|within|prior)/i]
+    };
+    Object.entries(parsed.temporalFacts || {}).forEach(([field, value]) => {
+      if (!Number.isFinite(value)) return;
+      add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, sourceSpan: findSourceSpan(text, temporalMap[field] || [], assertionText), temporality: { eventTime: null, relativeTo: "screening", daysBefore: value } });
+    });
+
+    return facts;
+  }
+
+  function detectDirectIdentifierWarnings(text) {
+    const warnings = [];
+    const rules = [
+      ["medical_record_number", /\b(?:mrn|medical record(?: number)?)[\s:#-]*[a-z0-9-]{4,}\b/i],
+      ["email_address", /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i],
+      ["phone_number", /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/],
+      ["date_of_birth", /\b(?:dob|date of birth|born)\s*[:#-]?\s*(?:\d{1,2}[/-]){2}\d{2,4}\b/i],
+      ["postal_address", /\b\d{2,6}\s+[a-z0-9.'-]+(?:\s+[a-z0-9.'-]+){0,4}\s+(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln)\b/i]
+    ];
+    rules.forEach(([code, pattern]) => {
+      if (pattern.test(text)) warnings.push({ code, message: `Possible ${code.replace(/_/g, " ")} detected. Remove direct identifiers before matching.` });
+    });
+    return warnings;
+  }
+
+  function deriveIgnoredText(text, facts) {
+    const used = (facts || []).map(fact => fact.sourceSpan).filter(span => span && span.end > span.start);
+    const ignored = [];
+    const sentencePattern = /[^.!?\n]+[.!?]?/g;
+    let match;
+    while ((match = sentencePattern.exec(text))) {
+      const sentence = match[0].trim();
+      if (!sentence) continue;
+      const start = match.index + match[0].indexOf(sentence);
+      const end = start + sentence.length;
+      const overlaps = used.some(span => span.start < end && span.end > start);
+      if (!overlaps) ignored.push({ text: sentence, start, end, status: "not_modeled" });
+    }
+    return ignored;
+  }
+
+  function buildCriticalQuestions(parsed) {
+    const questions = [];
+    const add = (code, question) => {
+      if (!questions.some(item => item.code === code)) questions.push({ code, question, critical: true });
+    };
+    if (!parsed.diseaseGroup) add("disease_context", "What is the current disease setting and stage?");
+    if (!parsed.screeningFacts?.ecogStatus) add("ecog_status", "What is the current ECOG performance status?");
+    if (parsed.cancerType === "Prostate" && parsed.diseaseGroup === "metastatic_unspecified") add("castration_status", "Is the metastatic disease castration-sensitive or castration-resistant?");
+    if (parsed.cancerType === "Bladder" && /nmibc/i.test(parsed.diseaseLabel || "") && !parsed.clinicalAxes?.bcgStatus) add("bcg_status", "Was BCG adequate, and when did high-grade disease recur or persist?");
+    if (parsed.cancerType === "Kidney" && !parsed.clinicalAxes?.histology) add("kidney_histology", "What is the RCC histologic subtype?");
+    if (parsed.cancerType === "Testicular" && !parsed.clinicalAxes?.histology) add("gct_histology", "Is the tumor pure seminoma, NSGCT, or mixed GCT?");
+    const receivedFacts = (parsed.candidateFacts || []).filter(fact => fact?.concept?.code === "treatment_exposure" && fact.predicate === "received");
+    if (receivedFacts.some(fact => !fact.temporality?.eventTime)) {
+      add("treatment_dates", "What are the exact start/stop or last-administration dates for each prior systemic therapy?");
+    }
+    if ((parsed.contextWarnings || []).some(item => item.code === "uncertain_assertion_excluded")) {
+      add("uncertain_assertion", "Can the uncertain disease finding be confirmed, ruled out, or dated from definitive imaging/pathology?");
+    }
+    return questions;
+  }
+
+  function applyFactDecisions(parsed, decisions) {
+    const decisionMap = decisions || {};
+    const enteredAt = new Date().toISOString();
+    const facts = (parsed?.candidateFacts || []).flatMap((fact, index) => {
+      const decision = typeof decisionMap === "object" ? decisionMap[fact.factId] : null;
+      if (!decision) return [{ ...fact }];
+      if (typeof decision === "string") return [{ ...fact, confirmation: decision, enteredAt }];
+      const confirmation = decision.confirmation || "confirmed";
+      if (confirmation !== "corrected") {
+        return [{ ...fact, ...decision, confirmation, enteredAt }];
+      }
+      const correctedFact = {
+        ...fact,
+        ...decision,
+        factId: `${fact.factId}-manual-correction-${index + 1}`,
+        confirmation: "corrected",
+        sourceType: "manual",
+        extractor: { type: "manual", version: "physician-fact-review-1.0.0" },
+        supersedes: fact.factId,
+        enteredAt
+      };
+      const originalFact = {
+        ...fact,
+        confirmation: "rejected",
+        rejectionReason: "superseded_by_physician_correction",
+        supersededBy: correctedFact.factId,
+        enteredAt
+      };
+      return [originalFact, correctedFact];
+    });
+    const contradictions = schemaApi?.detectContradictions ? schemaApi.detectContradictions(facts) : [];
+    return {
+      schemaVersion: schemaApi?.SCHEMA_VERSION || "1.0.0",
+      patientVersion: `patient-${Date.now()}`,
+      facts,
+      contradictions,
+      ignoredText: parsed?.ignoredText || [],
+      directIdentifierWarnings: parsed?.directIdentifierWarnings || [],
+      confirmedAt: enteredAt
+    };
+  }
+
+  function reconcileReviewedFacts(parsed, patientFactSet) {
+    const facts = Array.isArray(patientFactSet?.facts) ? patientFactSet.facts : [];
+    const candidateFacts = Array.isArray(parsed?.candidateFacts) ? parsed.candidateFacts : [];
+    const token = value => schemaApi?.canonicalToken
+      ? schemaApi.canonicalToken(value)
+      : String(value || "").replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const reviewed = facts.filter(fact =>
+      ["confirmed", "corrected"].includes(token(fact?.confirmation)) &&
+      token(fact?.experiencer || "patient") === "patient"
+    );
+    const definite = reviewed.filter(fact =>
+      ["present", "absent", "positive", "negative"].includes(token(fact?.assertion)) &&
+      !["planned", "unknown"].includes(token(fact?.status))
+    );
+    const originalConcepts = new Set(candidateFacts.map(fact => token(fact?.concept?.code || fact?.conceptId)));
+    const lastFact = (collection, concept, predicate) => {
+      const matches = collection.filter(fact =>
+        token(fact?.concept?.code || fact?.conceptId) === token(concept) &&
+        (!predicate || token(fact?.predicate) === token(predicate))
+      );
+      return matches.length ? matches[matches.length - 1] : null;
+    };
+    const cloneMap = value => ({ ...(value || {}) });
+    const next = {
+      ...parsed,
+      clinicalAxes: cloneMap(parsed?.clinicalAxes),
+      temporalFacts: cloneMap(parsed?.temporalFacts),
+      therapyHistory: {
+        ...cloneMap(parsed?.therapyHistory),
+        receivedTherapies: [...(parsed?.therapyHistory?.receivedTherapies || [])],
+        progressedOnTherapies: [...(parsed?.therapyHistory?.progressedOnTherapies || [])],
+        plannedTherapies: [...(parsed?.therapyHistory?.plannedTherapies || [])]
+      },
+      screeningFacts: {
+        ...cloneMap(parsed?.screeningFacts),
+        laboratoryResults: [...(parsed?.screeningFacts?.laboratoryResults || [])]
+      },
+      demographics: cloneMap(parsed?.demographics),
+      patientFactSet,
+      reviewReconciled: true
+    };
+
+    const cancerFact = lastFact(definite.filter(fact => ["present", "positive"].includes(token(fact.assertion))), "cancer_type", "has_diagnosis");
+    if (originalConcepts.has("cancer_type")) {
+      const cancerMap = { prostate: "Prostate", bladder: "Bladder", bladder_urothelial: "Bladder", kidney: "Kidney", kidney_rcc: "Kidney", testicular: "Testicular", testicular_gct: "Testicular" };
+      const reviewedCancer = cancerMap[token(cancerFact?.value)] || "";
+      if (!reviewedCancer) {
+        next.supported = false;
+        next.unsupportedReason = "The patient's own supported cancer diagnosis was rejected or remains uncertain.";
+        next.cancerType = "";
+        next.diseaseGroup = "";
+        next.diseaseLabel = "";
+        next.diseaseSettingIds = [];
+      } else if (reviewedCancer !== parsed.cancerType) {
+        next.cancerType = reviewedCancer;
+        next.diseaseGroup = "";
+        next.diseaseLabel = "";
+        next.diseaseSettingIds = [];
+      }
+    }
+
+    const diseaseFact = lastFact(definite.filter(fact => ["present", "positive"].includes(token(fact.assertion))), "disease_context", "has_diagnosis");
+    if (originalConcepts.has("disease_context")) {
+      if (!diseaseFact) {
+        next.diseaseGroup = "";
+        next.diseaseLabel = "";
+        next.diseaseSettingIds = [];
+      } else if (token(diseaseFact.value) !== token(parsed.diseaseGroup || parsed.diseaseLabel)) {
+        next.diseaseGroup = String(diseaseFact.value || "");
+        next.diseaseLabel = String(diseaseFact.value || "").replace(/_/g, " ");
+        // A manual free-text correction cannot safely inherit IDs derived from
+        // the original phrase. Broad same-cancer retrieval avoids a false miss.
+        next.diseaseSettingIds = [];
+      }
+    }
+
+    const applyMappedFields = (target, defaults) => {
+      Object.keys(defaults).forEach(field => {
+        const concept = token(field);
+        if (!originalConcepts.has(concept)) return;
+        const fact = lastFact(definite, concept, "has");
+        target[field] = fact ? fact.value : defaults[field];
+      });
+    };
+    applyMappedFields(next.clinicalAxes, createClinicalAxes());
+    applyMappedFields(next.demographics, { ageYears: null, administrativeSex: "" });
+    applyMappedFields(next.screeningFacts, { ecogStatus: "", labState: "", organFunctionState: "" });
+    applyMappedFields(next.temporalFacts, {
+      sinceLastSystemicTherapyDays: null,
+      sinceLastRadiationDays: null,
+      sinceLastSurgeryDays: null,
+      recentImagingDays: null
+    });
+
+    const originalLabConcepts = new Set((parsed?.screeningFacts?.laboratoryResults || []).map(item => token(item.concept)));
+    if (originalLabConcepts.size > 0) {
+      next.screeningFacts.laboratoryResults = definite
+        .filter(fact => originalLabConcepts.has(token(fact?.concept?.code || fact?.conceptId)) && token(fact?.predicate) === "has")
+        .map(fact => ({
+          concept: fact.concept.code,
+          display: fact.concept.display,
+          value: fact.value,
+          unit: fact.unit || null,
+          observedAt: fact.observedAt || null,
+          normalization: fact.normalization || null,
+          sourceSpan: fact.sourceSpan
+        }));
+    }
+
+    if (originalConcepts.has("treatment_exposure")) {
+      const positiveTherapyFacts = reviewed.filter(fact =>
+        token(fact?.concept?.code || fact?.conceptId) === "treatment_exposure" &&
+        token(fact?.experiencer || "patient") === "patient"
+      );
+      next.therapyHistory.receivedTherapies = Array.from(new Set(positiveTherapyFacts
+        .filter(fact => token(fact.predicate) === "received" && ["present", "positive"].includes(token(fact.assertion)) && !["planned", "unknown"].includes(token(fact.status)))
+        .map(fact => fact.value)));
+      next.therapyHistory.progressedOnTherapies = Array.from(new Set(positiveTherapyFacts
+        .filter(fact => token(fact.predicate) === "progressed_on" && ["present", "positive"].includes(token(fact.assertion)) && !["planned", "unknown"].includes(token(fact.status)))
+        .map(fact => fact.value)));
+      next.therapyHistory.plannedTherapies = Array.from(new Set(positiveTherapyFacts
+        .filter(fact => token(fact.predicate) === "planned" || token(fact.status) === "planned")
+        .map(fact => fact.value)));
+      next.temporalFacts.progressedAfterTherapies = next.therapyHistory.progressedOnTherapies.slice();
+    }
+
+    const semanticallyChanged = facts.some(fact => token(fact.confirmation) === "corrected" || token(fact.confirmation) === "rejected");
+    const changedDiseaseLogic = semanticallyChanged && facts.some(fact => {
+      const concept = token(fact?.concept?.code || fact?.conceptId);
+      return concept === "cancer_type" || concept === "disease_context" || Object.keys(createClinicalAxes()).some(axis => token(axis) === concept);
+    });
+    if (changedDiseaseLogic) {
+      next.diseaseSettingIds = [];
+      next.diseaseLabel = next.diseaseGroup ? String(next.diseaseGroup).replace(/_/g, " ") : "";
+    }
+    if (semanticallyChanged) {
+      next.chips = definite.slice(0, 10).map(fact => ({
+        group: "Reviewed",
+        label: `${fact.concept?.display || fact.concept?.code}: ${String(fact.value ?? "confirmed").replace(/_/g, " ")}`
+      }));
+    }
+    next.criticalQuestions = buildCriticalQuestions(next);
+    next.requiresConfirmation = facts.some(fact => token(fact.confirmation) === "unreviewed") || (patientFactSet?.contradictions || []).length > 0;
+    return next;
+  }
+
   function parse(query) {
     const rawQuery = normalizeWhitespace(query);
     const parsed = {
@@ -1825,11 +2508,20 @@
       temporalFacts: createTemporalFacts(),
       therapyHistory: createTherapyHistory(),
       screeningFacts: createScreeningFacts(),
+      demographics: { ageYears: null, administrativeSex: "" },
       treatmentPreferences: [],
       phasePreference: "",
       locationPreferences: [],
       chips: [],
-      notes: []
+      notes: [],
+      ignoredDiseaseSettingIds: [],
+      candidateFacts: [],
+      contradictions: [],
+      ignoredText: [],
+      criticalQuestions: [],
+      contextWarnings: [],
+      directIdentifierWarnings: [],
+      parserVersion: "2.0.0"
     };
 
     if (!rawQuery) {
@@ -1837,9 +2529,14 @@
       return parsed;
     }
 
-    parsed.cancerType = detectCancerType(rawQuery);
+    const assertionContext = buildAssertionText(rawQuery);
+    const assertionText = assertionContext.text;
+    parsed.contextWarnings = assertionContext.warnings;
+    parsed.cancerType = detectCancerType(assertionText);
     if (!parsed.cancerType) {
-      parsed.unsupportedReason = "Patient search currently supports prostate, bladder, kidney, and testicular queries. Include the cancer type or a disease-specific term.";
+      parsed.unsupportedReason = parsed.contextWarnings.some(item => item.code === "family_history_excluded")
+        ? "Only a family-history cancer mention was found. Include the patient's own confirmed diagnosis and current disease setting."
+        : "Patient search currently supports prostate, bladder, kidney, and testicular queries. Include the cancer type or a disease-specific term.";
       return parsed;
     }
 
@@ -1847,20 +2544,22 @@
     parsed.treatmentPreferences = detectTreatmentPreferences(rawQuery);
     parsed.phasePreference = detectPhasePreference(rawQuery);
     parsed.locationPreferences = detectLocationTerms(rawQuery);
+    parsed.demographics = detectDemographics(assertionText);
 
     if (parsed.cancerType === "Prostate") {
-      parseProstate(parsed, rawQuery);
+      parseProstate(parsed, assertionText);
     } else if (parsed.cancerType === "Bladder") {
-      parseBladder(parsed, rawQuery);
+      parseBladder(parsed, assertionText);
     } else if (parsed.cancerType === "Kidney") {
-      parseKidney(parsed, rawQuery);
+      parseKidney(parsed, assertionText);
     } else if (parsed.cancerType === "Testicular") {
-      parseTesticular(parsed, rawQuery);
+      parseTesticular(parsed, assertionText);
     }
 
-    populateTemporalFacts(parsed, rawQuery);
-    populateTherapyHistory(parsed, rawQuery);
-    populateScreeningFacts(parsed, rawQuery);
+    populateTemporalFacts(parsed, assertionText);
+    populateTherapyHistory(parsed, assertionText);
+    populatePlannedTherapies(parsed, rawQuery);
+    populateScreeningFacts(parsed, assertionText);
     addChip(parsed.chips, "Cancer", parsed.cancerType);
     if (parsed.phasePreference) addChip(parsed.chips, "Preference", parsed.phasePreference);
     parsed.treatmentPreferences.forEach(pref => addChip(parsed.chips, "Preference", pref.replace(/_/g, " ")));
@@ -1869,11 +2568,23 @@
     addTemporalChips(parsed);
     addScreeningChips(parsed);
 
+    parsed.candidateFacts = buildCandidateFacts(parsed, rawQuery, assertionText);
+    parsed.contradictions = schemaApi?.detectContradictions
+      ? schemaApi.detectContradictions(parsed.candidateFacts)
+      : [];
+    parsed.ignoredText = deriveIgnoredText(rawQuery, parsed.candidateFacts);
+    parsed.criticalQuestions = buildCriticalQuestions(parsed);
+    parsed.directIdentifierWarnings = detectDirectIdentifierWarnings(rawQuery);
+    parsed.requiresConfirmation = parsed.candidateFacts.some(fact => fact.confirmation !== "confirmed") || parsed.contradictions.length > 0;
+
     return parsed;
   }
 
   const api = {
-    parse
+    parse,
+    applyFactDecisions,
+    reconcileReviewedFacts,
+    detectDirectIdentifierWarnings
   };
 
   global.PatientQueryParser = api;

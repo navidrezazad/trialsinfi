@@ -12,6 +12,11 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+try:
+    from .clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria
+except ImportError:
+    from production_ready_pipeline.clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria
+
 
 def _collapse_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
@@ -106,12 +111,12 @@ def _build_source_tags(clinical_axes: dict[str, str]) -> dict:
         "contactEmail": "CT.gov",
         "diseaseSettingPrimary": "NCCN-inferred",
         "diseaseSettingAll": "NCCN-inferred",
-        "classificationConfidence": "NCCN-inferred",
+        "classificationConfidence": "Deterministic rule evidence (not probability)",
         "classificationEvidence": "NCCN-inferred",
-        "treatmentModality": "AI-extracted",
-        "delivery": "AI-extracted",
+        "treatmentModality": "Deterministic rule-inferred",
+        "delivery": "Deterministic rule-inferred",
         "clinicalAxes": {
-            key: "AI-extracted"
+            key: "Deterministic rule-inferred"
             for key in clinical_axes
         },
     }
@@ -165,7 +170,7 @@ def _slugify(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")
 
 
-def _normalize_site_rows(site_rows: list[dict]) -> dict[str, list[dict]]:
+def _normalize_site_rows(site_rows: list[dict], ingested_at: str) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in site_rows:
         grouped[row["NCT ID"]].append({
@@ -178,6 +183,11 @@ def _normalize_site_rows(site_rows: list[dict]) -> dict[str, list[dict]]:
             "email": _normalize_email(row.get("PI email", "")),
             "phone": row.get("PI phone", "").strip(),
             "affiliation": row.get("PI affiliation", "").strip(),
+            "locationStatus": _map_status(row.get("Status", "")),
+            "statusSource": "ClinicalTrials.gov",
+            "sourceVerifiedDate": row.get("Last update posted", "").strip() or None,
+            "ingestedAt": ingested_at,
+            "manualStatus": None,
         })
 
     for nct_id, rows in grouped.items():
@@ -202,7 +212,7 @@ def build_website_catalog(
     source_run_dir: str,
 ) -> dict:
     export_time = datetime.now(timezone.utc).isoformat()
-    grouped_sites = _normalize_site_rows(site_rows)
+    grouped_sites = _normalize_site_rows(site_rows, export_time)
     institutions = sorted({
         site["institution"]
         for site_group in grouped_sites.values()
@@ -246,12 +256,40 @@ def build_website_catalog(
         phase_raw = record.get("Phase", "").strip()
         clinical_axes = _build_clinical_axes(record)
         source_tags = _build_source_tags(clinical_axes)
+        mapped_status = _map_status(record.get("Status", ""))
+        criteria = extract_criteria(
+            nct_id=nct_id,
+            inclusion_text=inclusion_text,
+            exclusion_text=exclusion_text,
+            min_age=record.get("Min age", ""),
+            max_age=record.get("Max age", ""),
+            sex=record.get("Sex", ""),
+            registry_version=export_time,
+        )
+        cohorts = build_cohorts(
+            nct_id=nct_id,
+            title=record.get("Study title", "").strip(),
+            status=mapped_status,
+            disease_setting_ids=disease_setting_ids,
+            criteria=criteria,
+            inclusion_text=inclusion_text,
+            sites=sites,
+            registry_version=export_time,
+        )
+        trial_provenance = build_trial_provenance(record, export_time)
+        critical_criteria = [criterion for criterion in criteria if criterion.get("criticality") == "hard"]
+        modeled_critical = [criterion for criterion in critical_criteria if criterion.get("modeledStatus") == "modeled"]
 
         trials.append({
+            "schemaVersion": SCHEMA_VERSION,
             "id": nct_id,
             "nctId": nct_id,
+            "registry": "ClinicalTrials.gov",
+            "registryVersion": export_time,
+            "retrievedAt": export_time,
+            "rawRecordHash": trial_provenance["rawRecordHash"],
             "title": record.get("Study title", "").strip(),
-            "status": _map_status(record.get("Status", "")),
+            "status": mapped_status,
             "description": _collapse_whitespace(record.get("Brief summary", "")),
             "qualification": record.get("Disease setting (primary)", "").strip(),
             "location": {
@@ -283,7 +321,11 @@ def build_website_catalog(
             "diseaseSettingAll": disease_settings,
             "diseaseSettingAllIds": disease_setting_ids,
             "classificationConfidence": record.get("Classification confidence", "").strip(),
+            "classificationEvidenceStrength": str(record.get("Classification evidence strength", record.get("Classification confidence", ""))).strip(),
+            "classificationConfidenceIsProbability": False,
             "classificationEvidence": classification_evidence,
+            "classificationFieldEvidence": record.get("Classification field evidence", []),
+            "classificationMethod": record.get("Classification method", "deterministic_taxonomy_rules"),
             "treatmentModality": record.get("Treatment modality", "").strip(),
             "delivery": record.get("Delivery", "").strip(),
             "clinicalAxes": clinical_axes,
@@ -295,6 +337,17 @@ def build_website_catalog(
             "availableInstitutions": available_institutions,
             "siteCount": len(sites),
             "sites": sites,
+            "criteria": criteria,
+            "cohorts": cohorts,
+            "provenance": trial_provenance,
+            "dataQuality": {
+                "cohortReviewed": False,
+                "criticalCriteriaModeled": (len(modeled_critical) / len(critical_criteria)) if critical_criteria else 0.0,
+                "criticalCriterionCount": len(critical_criteria),
+                "siteStatusCurrent": any(site.get("locationStatus") == "recruiting" for site in sites),
+                "registrySnapshot": export_time,
+                "rawRecordHash": trial_provenance["rawRecordHash"],
+            },
             "inclusionCriteria": inclusion_text,
             "exclusionCriteria": exclusion_text,
             "primaryOutcomes": primary_outcomes,
@@ -309,6 +362,7 @@ def build_website_catalog(
 
     return {
         "metadata": {
+            "schemaVersion": SCHEMA_VERSION,
             "exportType": "website_trials_catalog",
             "exportedAt": export_time,
             "lastSyncAt": export_time,

@@ -4,6 +4,7 @@
 knowledgecenter/
 __pycache__/
 *.pyc
+.venv/
 
 # Local runtime data
 data/physician_forum.sqlite

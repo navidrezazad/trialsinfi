@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/trial-cohort.schema.json",
+  "title": "Auditable clinical-trial cohort",
+  "type": "object",
+  "required": ["schemaVersion", "cohortId", "label", "enrollmentStatus", "sharedCriteria", "cohortSpecificCriteria", "cohortExtraction"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "cohortId": { "type": "string", "minLength": 1 },
+    "label": { "type": "string" },
+    "armIds": { "type": "array", "items": { "type": "string" } },
+    "enrollmentStatus": { "type": "string" },
+    "diseaseConcepts": { "type": "array", "items": { "type": "string" } },
+    "sites": { "type": "array" },
+    "sharedCriteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
+    "cohortSpecificCriteria": { "type": "array", "items": { "$ref": "#/$defs/criterion" } },
+    "cohortExtraction": {
+      "type": "object",
+      "required": ["method", "confidence", "reviewedBy", "reviewedAt"],
+      "properties": {
+        "method": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reviewedBy": { "type": ["string", "null"] },
+        "reviewedAt": { "type": ["string", "null"] },
+        "ambiguity": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "required": ["criterionId", "scope", "kind", "criticality", "predicate", "sourceSpan", "provenance", "reviewStatus", "modeledStatus"],
+      "properties": {
+        "criterionId": { "type": "string" },
+        "scope": { "enum": ["trial", "cohort", "arm", "site"] },
+        "kind": { "enum": ["inclusion", "exclusion"] },
+        "criticality": { "enum": ["hard", "supporting", "preference"] },
+        "predicate": { "type": "object" },
+        "sourceSpan": { "type": "object" },
+        "provenance": { "type": "object" },
+        "reviewStatus": { "enum": ["unreviewed", "registry_explicit", "curator_reviewed", "clinician_reviewed", "rejected"] },
+        "modeledStatus": { "enum": ["modeled", "not_modeled", "ambiguous"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

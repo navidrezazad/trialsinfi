@@ -4,7 +4,7 @@
  */
 class TrialManager {
   constructor() {
-    this.catalogVersion = '20260421-utils-fix';
+    this.catalogVersion = '20260802-scientific-prescreen-r3';
     this.catalogRequestNonce = `${this.catalogVersion}-${Date.now()}`;
     this.trials = [];
     this.filteredTrials = [];
@@ -133,6 +133,14 @@ class TrialManager {
   async attemptStructuredRepair(currentTrials, metadata = {}) {
     const currentCoverage = this.getStructuredCoverage(currentTrials);
     if (!Array.isArray(currentTrials) || currentTrials.length === 0) {
+      return { trials: currentTrials, metadata };
+    }
+    const canonicalCatalog = String(metadata?.schemaVersion || '') === '1.0.0' && currentTrials.every(trial =>
+      Array.isArray(trial?.cohorts) &&
+      Array.isArray(trial?.criteria) &&
+      trial?.provenance && typeof trial.provenance === 'object'
+    );
+    if (canonicalCatalog) {
       return { trials: currentTrials, metadata };
     }
 
@@ -597,4 +605,5 @@ class TrialManager {
   }
 }
 
-window.TrialManager = TrialManager;
+if (typeof window !== 'undefined') window.TrialManager = TrialManager;
+if (typeof module !== 'undefined' && module.exports) module.exports = TrialManager;

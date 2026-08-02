@@ -1,347 +1,112 @@
-# Patient Search Guide
+# Physician Patient-to-Trial Search Guide
 
-This guide explains how to use the `Search Trials` tab effectively.
+The patient search is a conservative protocol-review aid for prostate, bladder/urothelial, kidney/RCC, and testicular/GCT trials. It retrieves plausible trial cohorts and explains what is known, unknown, conflicting, or not modeled. It does **not** determine eligibility, recommend treatment, enroll a patient, or replace review of the current protocol and confirmation with the study site.
 
-The patient search is a deterministic matcher, not a chatbot. It works best when the query includes the clinical facts that actually drive trial fit:
+## Before entering a case
 
-- cancer type
-- disease setting
-- therapies already received
-- therapies the patient progressed on
-- biomarkers
-- screening facts like ECOG, labs, organ function, and washout when known
+Use only a de-identified clinical summary. Do not enter a name, medical-record number, date of birth, address, phone number, email address, or another direct identifier. The browser checks for common identifiers and does not deliberately persist the raw narrative in local or session storage, but de-identification remains the physician's responsibility.
 
-## What The Search Is Trying To Do
+## The confirmation-first workflow
 
-The search is designed to:
+1. Enter a concise clinical description.
+2. Review every extracted fact and its exact source phrase.
+3. Confirm, correct, or reject each fact. Matching remains disabled until this review is complete.
+4. Resolve any displayed contradiction and inspect text the parser did not model.
+5. Run retrieval, then review cohort criteria, data quality, provenance, and site-status evidence.
+6. Verify the current protocol and contact the site before referral.
 
-- find trials that fit the patient’s disease state
-- account for required prior therapies
-- account for therapies the patient already progressed on
-- avoid overcalling trials that only partially fit
-- return `Possible match` when key information is missing or needs verification
+An extracted fact is a proposal, not a fact merely because the parser found it. A confirmed patient fact may be compared only with a modeled protocol criterion. Missing patient information remains `UNKNOWN`; protocol text the system cannot safely represent remains `NOT_MODELED`.
 
-In general:
+## What to include
 
-- `Strong match` means the query lines up well with the trial’s apparent disease state and therapy requirements
-- `Possible match` means the trial may still be relevant, but something needs confirmation
-- if a trial clearly conflicts with the patient profile, it should be excluded
+Use this order when practical:
 
-## Most Important Rule
+`[age/sex if relevant] + [cancer and current disease setting] + [histology/risk] + [received therapies and dates] + [progression events] + [biomarkers/assays] + [ECOG] + [exact labs with units/date] + [site or phase preferences]`
 
-For advanced prostate search, **prior therapy sequence matters a lot**.
+Example:
 
-There is a real difference between:
+`72-year-old man with mCRPC. Progressed on enzalutamide; last dose 2026-06-01. No prior docetaxel. BRCA2 pathogenic alteration. PSMA-positive PET. ECOG 1. Labs on 2026-08-01: hemoglobin 9.5 g/dL, ANC 1.5 x 10^9/L, platelets 125 K/uL, CrCl 55 mL/min.`
 
-- `received docetaxel`
-- `progressed on docetaxel`
+Use explicit statements such as:
 
-There is also a real difference between:
+- `received docetaxel` when exposure is known;
+- `progressed on docetaxel` only when progression on that agent is documented;
+- `no prior cabazitaxel` when absence of exposure is known;
+- `considering pembrolizumab` for a planned therapy—the system must not count this as prior exposure;
+- `last systemic therapy 21 days ago` or an exact administration date;
+- `hemoglobin 9.5 g/dL on 2026-08-01` rather than `labs normal`.
 
-- `post-ARPI`
-- `progressed on enzalutamide`
-- `progressed on abiraterone`
+Generic statements such as `advanced disease`, `many prior therapies`, `adequate labs`, or `good organ function` are retained for review but cannot satisfy a protocol-specific stage, sequence, or numeric threshold.
 
-If you want the best results, be explicit.
+## Context matters
 
-## Best Query Structure
+The parser distinguishes patient facts from several unsafe contexts:
 
-Use this pattern:
+- `family history of prostate cancer` is not the patient's diagnosis;
+- `cannot rule out brain metastases` is not a confirmed positive finding;
+- a possible, conditional, or hypothetical assertion cannot satisfy or violate a criterion;
+- planned treatment is not prior treatment;
+- `received` and `progressed on` are separate events;
+- negative and positive assertions about the same proposition create a visible contradiction.
 
-`[Cancer] + [Disease state] + [Progressed on] + [Other prior therapies] + [Biomarkers] + [Screening facts if known]`
+When an event date, assay detail, or current value is missing, the system asks for it rather than inventing a default. In particular, there is no universal 14-day washout and a phrase such as `labs normal` never proves a numeric protocol threshold.
 
-Good example:
+## Result tiers
 
-`mCRPC. Progressed on enzalutamide. No prior docetaxel. BRCA2+. PSMA-positive PET. ECOG 1. Labs normal. Adequate organ function.`
+Results are review queues, not eligibility labels:
 
-## Phrases That Work Well
+- **Priority for protocol review** — positive disease evidence is present, critical modeled criteria do not conflict, the cohort and critical criteria have the required human review, and current local recruitment evidence is available. This still is not an eligibility determination.
+- **Potentially relevant — clarify patient evidence** — the disease context is plausible, but one or more important patient facts remain unknown or uncertain after review.
+- **Manual review — trial data incomplete** — cohort boundaries, critical criteria, or trial-side data are incomplete, ambiguous, or not human reviewed.
+- **Modeled conflict** — a modeled criterion conflicts with confirmed facts. The record remains visible for audit. Only a current, clinician-reviewed hard criterion backed by confirmed, noncontradictory patient facts may activate the hard-exclusion gate.
+- **Disease-context retrieval only** — the record was retrieved from the same cancer context without enough positive evidence for a more specific queue.
 
-Use these exact styles when possible:
+Ranking inside a tier may use lexical relevance, disease concepts, location, phase, and other preferences. The interface renders ranked groups in batches of 20 for review efficiency while keeping every retained cohort accessible. Ranking never converts an unknown criterion into a satisfied one and never hides trial-data uncertainty.
 
-- `progressed on enzalutamide`
-- `progressed on abiraterone`
-- `progressed on docetaxel`
-- `progressed on ADT and enzalutamide and docetaxel`
-- `received docetaxel`
-- `currently on enzalutamide`
-- `no prior docetaxel`
-- `no prior cabazitaxel`
-- `BRCA2+`
-- `HRR positive`
-- `PSMA-positive PET`
-- `FGFR3 mutation`
-- `HER2 IHC 3+`
-- `ECOG 1`
-- `labs normal`
-- `adequate organ function`
-- `last systemic therapy 21 days ago`
+## Criterion states
 
-## Phrases To Avoid
+Each modeled criterion is evaluated independently:
 
-These are weaker and less precise:
+- `SATISFIED` — confirmed patient evidence satisfies the represented predicate;
+- `VIOLATED` — confirmed patient evidence contradicts it;
+- `UNKNOWN` — required patient evidence is missing, unconfirmed, stale, contradictory, uncertain, or uses incompatible units;
+- `NOT_MODELED` — the protocol statement cannot be represented safely by the current schema;
+- `NOT_APPLICABLE` — the criterion does not apply to that cohort or branch.
 
-- `many prior therapies`
-- `heavily treated`
-- `failed multiple treatments`
-- `advanced disease`
-- `on hormone therapy`
-- `post treatment`
+The interface shows the protocol source text, normalized predicate, supporting patient fact IDs, provenance, and the next question when available.
 
-The system may still return results, but they are more likely to become `Possible match`.
+## Trial and site data quality
 
-## Prostate Examples
+One NCT record can contain multiple arms or cohorts with different eligibility. Until a curator maps those boundaries, the catalog uses an explicit `Unsegmented enrollment pathway` and sends the result to manual review. Model-generated cohort or criterion suggestions are proposals only and cannot be applied automatically.
 
-### 1. Broad Post-ARPI Search
+Historical catalog locations do not contain reliable per-site recruitment timestamps. Such locations are labeled unknown or stale. A study-level `Recruiting` status must not be interpreted as proof that a particular Southern California site or cohort is open. Confirm directly with the site.
 
-Query:
+## Examples
 
-`mCRPC. Progressed on enzalutamide.`
+### Prostate
 
-Meaning:
+`mCRPC. Progressed on enzalutamide on 2026-06-01. No prior docetaxel. BRCA2 pathogenic alteration. PSMA-positive PET. ECOG 1.`
 
-- prostate cancer
-- metastatic CRPC
-- explicit progression on enzalutamide
+### Bladder/urothelial
 
-This is better than:
+`BCG-unresponsive NMIBC with CIS after adequate BCG; recurrence documented 2026-05-15.`
 
-`advanced prostate cancer after treatment`
+`Metastatic urothelial carcinoma after platinum. FGFR3 susceptible alteration. ECOG 1.`
 
-### 2. Exact Later-Line Sequence
+### Kidney/RCC
 
-Query:
+`Metastatic clear-cell RCC, IMDC intermediate risk. Progressed on nivolumab plus cabozantinib; last dose 2026-06-20.`
 
-`mCRPC. Progressed on ADT and enzalutamide and docetaxel.`
+### Testicular/GCT
 
-Use this when the patient really has progressed through all three.
+`NSGCT after first-line BEP with residual mass 2.4 cm, markers normal, no prior HDCT.`
 
-This matters because a trial that requires prior progression on all of those should not be matched strongly for a patient who only progressed on one of them.
+## Scientific limitations
 
-### 3. Received But Did Not Progress
+- The automatically migrated catalog is intentionally incomplete: unreviewed free-text criteria and cohort boundaries remain `NOT_MODELED` or manual-review items.
+- Deterministic extraction covers selected disease axes, age/sex, ECOG, exact laboratory thresholds, and selected temporal windows; it does not model every comorbidity, medication, imaging rule, reproductive requirement, or protocol exception.
+- Optional language-model extensions are disabled by default, require an immutable model version and held-out validation artifact, and may only propose source-spanned structures for human review.
+- No model score is presented as a probability of eligibility.
+- Clinical use requires the prespecified retrospective benchmark, external double annotation/adjudication, and a prospective silent evaluation described in `validation/README.md`.
 
-Query:
-
-`mCRPC. Received docetaxel. Progressed on enzalutamide.`
-
-This is important. It tells the system:
-
-- docetaxel was given
-- but progression is only explicitly known on enzalutamide
-
-That should behave differently from:
-
-`mCRPC. Progressed on enzalutamide and docetaxel.`
-
-### 4. Current Therapy, Not Progressed Yet
-
-Query:
-
-`mCRPC. Currently on enzalutamide.`
-
-Do not write:
-
-`post enzalutamide`
-
-unless the patient actually progressed on it.
-
-### 5. Biomarker-Enriched Search
-
-Query:
-
-`mCRPC. Progressed on enzalutamide. No prior docetaxel. BRCA2+. PSMA-positive PET.`
-
-This is a strong query because it combines:
-
-- disease state
-- exact prior progression
-- taxane history
-- DNA repair biomarker
-- PSMA imaging status
-
-### 6. Screening Facts Included
-
-Query:
-
-`mCRPC. Progressed on enzalutamide. ECOG 1. Labs normal. Adequate organ function. Last systemic therapy 21 days ago.`
-
-This can promote some trials from `Possible match` to `Strong match`.
-
-## Bladder Examples
-
-### 1. NMIBC / BCG-Unresponsive
-
-Query:
-
-`BCG-unresponsive NMIBC with CIS`
-
-### 2. Papillary-Only Recurrence
-
-Query:
-
-`BCG-unresponsive NMIBC with papillary-only recurrence`
-
-### 3. Metastatic Urothelial With Biomarker
-
-Query:
-
-`Metastatic urothelial carcinoma after prior platinum. FGFR3 mutation.`
-
-### 4. HER2-Directed Search
-
-Query:
-
-`Metastatic urothelial carcinoma after prior platinum. HER2 IHC 3+.`
-
-## Kidney Examples
-
-### 1. Generic Clear-Cell / Metastatic
-
-Query:
-
-`Metastatic clear-cell RCC after prior IO.`
-
-### 2. Papillary / MET-Driven
-
-Query:
-
-`Metastatic papillary type 2 RCC. MET alteration.`
-
-### 3. Non-Clear-Cell
-
-Query:
-
-`Metastatic non-clear-cell RCC, treatment-naive.`
-
-### 4. Rare Histology
-
-Query:
-
-`Metastatic chromophobe RCC`
-
-or
-
-`Metastatic renal medullary carcinoma`
-
-## Testicular Examples
-
-### 1. Stage IS Pattern
-
-Query:
-
-`NSGCT with AFP elevated after orchiectomy and no prior chemotherapy`
-
-### 2. Salvage Context
-
-Query:
-
-`NSGCT after first-line BEP with residual mass after chemotherapy, markers normal`
-
-### 3. Mediastinal Primary
-
-Query:
-
-`Primary mediastinal NSGCT, advanced disease, no prior chemotherapy`
-
-## Stronger vs Weaker Query Examples
-
-### Weak
-
-`advanced prostate cancer after treatment`
-
-Why it is weak:
-
-- does not specify disease state
-- does not specify what treatment was received
-- does not say what the cancer progressed on
-
-### Better
-
-`mCRPC. Progressed on enzalutamide.`
-
-Why it is better:
-
-- exact disease state
-- exact named therapy progression
-
-### Strong
-
-`mCRPC. Progressed on enzalutamide. No prior docetaxel. BRCA2+. PSMA-positive PET. ECOG 1. Labs normal. Adequate organ function.`
-
-Why it is strong:
-
-- disease state
-- exact prior progression
-- exact taxane history
-- biomarkers
-- screening facts
-
-## How To Think About Prior Therapy
-
-When writing a query, separate these concepts clearly:
-
-- `must have already received`
-- `must have already progressed on`
-- `must not have received`
-
-Examples:
-
-- `received docetaxel`
-- `progressed on docetaxel`
-- `no prior cabazitaxel`
-
-Those are not interchangeable.
-
-## Common Search Patterns
-
-### If You Know Exact Sequence
-
-Use:
-
-`mCRPC. Progressed on ADT and enzalutamide and docetaxel.`
-
-### If You Only Know One Confirmed Progression
-
-Use:
-
-`mCRPC. Received docetaxel. Progressed on enzalutamide.`
-
-### If You Only Know Broad Setting
-
-Use:
-
-`mCRPC`
-
-This will still return trials, but expect more `Possible match` results.
-
-## Interpreting Possible Match
-
-`Possible match` does not mean weak or irrelevant. It usually means one of these needs confirmation:
-
-- exact prior therapy sequence
-- biomarker status
-- PSMA imaging status
-- ECOG
-- organ function
-- washout timing
-
-## Practical Tips
-
-- Include the cancer type or disease state early in the query.
-- Use exact agent names when you know them.
-- Use `progressed on` if progression is known.
-- Use `received` if exposure is known but progression is not.
-- Include `no prior` when it matters.
-- Add biomarkers when relevant.
-- Add ECOG, labs, organ function, and timing if available.
-
-## Current Limitation
-
-The search is a structured matching tool, not a final eligibility engine.
-
-It is meant to:
-
-- help narrow the right trials
-- reduce obvious mismatches
-- show what still needs confirmation
-
-It should not replace full protocol review or discussion with the trial team.
+The safe interpretation of every result is: **a cohort worth reviewing, with explicit evidence and unresolved work—not a verdict about the patient.**

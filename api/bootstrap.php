@@ -792,7 +792,13 @@ function cts_normalize_sites_field($value): array
             'piName' => trim((string)($site['piName'] ?? '')),
             'email' => trim((string)($site['email'] ?? '')),
             'phone' => trim((string)($site['phone'] ?? '')),
-            'affiliation' => trim((string)($site['affiliation'] ?? ''))
+            'affiliation' => trim((string)($site['affiliation'] ?? '')),
+            'locationStatus' => trim((string)($site['locationStatus'] ?? $site['status'] ?? 'unknown')),
+            'statusSource' => trim((string)($site['statusSource'] ?? 'not_available')),
+            'sourceVerifiedDate' => isset($site['sourceVerifiedDate']) && $site['sourceVerifiedDate'] !== '' ? trim((string)$site['sourceVerifiedDate']) : null,
+            'ingestedAt' => isset($site['ingestedAt']) && $site['ingestedAt'] !== '' ? trim((string)$site['ingestedAt']) : null,
+            'manualStatus' => isset($site['manualStatus']) && $site['manualStatus'] !== '' ? trim((string)$site['manualStatus']) : null,
+            'statusStale' => (bool)($site['statusStale'] ?? false)
         ];
 
         $hasContent = false;
@@ -880,7 +886,13 @@ function cts_normalize_catalog_metadata($metadata): array
         'sourceRun' => trim((string)($metadata['sourceRun'] ?? '')),
         'sourceRunDir' => trim((string)($metadata['sourceRunDir'] ?? '')),
         'trialCount' => (int)($metadata['trialCount'] ?? 0),
-        'institutionCount' => (int)($metadata['institutionCount'] ?? 0)
+        'institutionCount' => (int)($metadata['institutionCount'] ?? 0),
+        'schemaVersion' => trim((string)($metadata['schemaVersion'] ?? '')),
+        'schemaMigratedAt' => trim((string)($metadata['schemaMigratedAt'] ?? '')),
+        'schemaMigration' => trim((string)($metadata['schemaMigration'] ?? '')),
+        'criterionCount' => (int)($metadata['criterionCount'] ?? 0),
+        'cohortCount' => (int)($metadata['cohortCount'] ?? 0),
+        'rawPatientNarrativePersisted' => (bool)($metadata['rawPatientNarrativePersisted'] ?? false)
     ];
 }
 
@@ -941,6 +953,11 @@ function cts_normalize_trial_shape($trial): array
 
     return [
         'id' => trim((string)($trial['id'] ?? '')),
+        'schemaVersion' => trim((string)($trial['schemaVersion'] ?? '')),
+        'registry' => trim((string)($trial['registry'] ?? '')),
+        'registryVersion' => trim((string)($trial['registryVersion'] ?? '')),
+        'retrievedAt' => trim((string)($trial['retrievedAt'] ?? '')),
+        'rawRecordHash' => trim((string)($trial['rawRecordHash'] ?? '')),
         'nctId' => trim((string)($trial['nctId'] ?? '')),
         'title' => trim((string)($trial['title'] ?? '')),
         'status' => $normalizedStatus ?? 'not_specified',
@@ -975,11 +992,19 @@ function cts_normalize_trial_shape($trial): array
         'diseaseSettingAll' => $diseaseSettingAll,
         'diseaseSettingAllIds' => $diseaseSettingAllIds,
         'classificationConfidence' => trim((string)($trial['classificationConfidence'] ?? '')),
+        'classificationEvidenceStrength' => trim((string)($trial['classificationEvidenceStrength'] ?? $trial['classificationConfidence'] ?? '')),
+        'classificationIsProbability' => (bool)($trial['classificationIsProbability'] ?? false),
+        'classificationMethod' => trim((string)($trial['classificationMethod'] ?? '')),
         'classificationEvidence' => $classificationEvidence,
+        'classificationFieldEvidence' => isset($trial['classificationFieldEvidence']) && is_array($trial['classificationFieldEvidence']) ? $trial['classificationFieldEvidence'] : [],
         'treatmentModality' => trim((string)($trial['treatmentModality'] ?? '')),
         'delivery' => trim((string)($trial['delivery'] ?? '')),
         'clinicalAxes' => $clinicalAxes,
         'sourceTags' => $sourceTags,
+        'criteria' => isset($trial['criteria']) && is_array($trial['criteria']) ? $trial['criteria'] : [],
+        'cohorts' => isset($trial['cohorts']) && is_array($trial['cohorts']) ? $trial['cohorts'] : [],
+        'dataQuality' => isset($trial['dataQuality']) && is_array($trial['dataQuality']) ? $trial['dataQuality'] : [],
+        'provenance' => isset($trial['provenance']) && is_array($trial['provenance']) ? $trial['provenance'] : [],
         'nccnTaxonomyVersion' => trim((string)($trial['nccnTaxonomyVersion'] ?? '')),
         'ctGovUrl' => trim((string)($trial['ctGovUrl'] ?? '')),
         'conditions' => $conditions,

@@ -33,9 +33,9 @@ def _sample_records() -> tuple[list[dict], list[dict]]:
             "Status": "RECRUITING",
             "Cancer type": "Prostate",
             "Disease setting (primary)": "mCRPC",
-            "Disease setting ID (primary)": "crpc_metastatic_postARPI",
+            "Disease setting ID (primary)": "crpc_metastatic_postarpi",
             "Disease setting (all)": "mCRPC",
-            "Disease setting IDs (all)": "crpc_metastatic_postARPI | crpc_general",
+            "Disease setting IDs (all)": "crpc_metastatic_postarpi | crpc_general",
             "Classification confidence": "HIGH",
             "Classification evidence": "mCRPC | BRCA2 | post-enzalutamide",
             "BCG status": "Not applicable",
@@ -159,8 +159,8 @@ def test_exports() -> None:
         check(first_trial.get("phase") == "Phase II", "Website catalog normalizes display phase")
         check(first_trial.get("availableInstitutions") == ["UCLA"], "Website catalog preserves institution list")
         check(first_trial.get("sites", [{}])[0].get("email") == "jane.smith@example.org", "Website catalog preserves site contacts")
-        check(first_trial.get("diseaseSettingPrimaryId") == "crpc_metastatic_postARPI", "Website catalog preserves primary disease-setting id")
-        check(first_trial.get("diseaseSettingAllIds") == ["crpc_metastatic_postARPI", "crpc_general"], "Website catalog preserves disease-setting ids")
+        check(first_trial.get("diseaseSettingPrimaryId") == "crpc_metastatic_postarpi", "Website catalog preserves primary disease-setting id")
+        check(first_trial.get("diseaseSettingAllIds") == ["crpc_metastatic_postarpi", "crpc_general"], "Website catalog preserves disease-setting ids")
         check(first_trial.get("classificationEvidence") == ["mCRPC", "BRCA2", "post-enzalutamide"], "Website catalog preserves classification evidence")
         check(first_trial.get("clinicalAxes", {}).get("priorArpi") == "yes", "Website catalog preserves clinical axes")
         check(first_trial.get("clinicalAxes", {}).get("fgfr3Status") is None, "Website catalog omits empty bladder biomarker axes")

@@ -7,6 +7,7 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PACKAGE.parent))
 
+from production_ready_pipeline.clinical_schema import exact_trial_anchor
 from production_ready_pipeline.nccn_classifier import classify_trial
 
 
@@ -65,6 +66,24 @@ def test_bladder() -> None:
     )
     check(result.her2_status == "ihc_3_plus", f"her2_status={result.her2_status!r}")
 
+    result = classify_trial(
+        cancer_type="Bladder/Urothelial",
+        title="Trastuzumab Deruxtecan All-Comer Urothelial Study",
+        eligibility_incl="Metastatic urothelial carcinoma; archival tissue requested for exploratory analysis",
+        conditions="metastatic urothelial carcinoma",
+        interventions="trastuzumab deruxtecan",
+    )
+    check(result.her2_status == "Not applicable", f"All-comer HER2 intervention remains unrestricted: {result.her2_status!r}")
+
+    result = classify_trial(
+        cancer_type="Bladder/Urothelial",
+        title="Erdafitinib All-Comer Urothelial Study",
+        eligibility_incl="Metastatic urothelial carcinoma without biomarker selection",
+        conditions="metastatic urothelial carcinoma",
+        interventions="erdafitinib",
+    )
+    check(result.fgfr3_status == "Not applicable", f"All-comer FGFR intervention remains unrestricted: {result.fgfr3_status!r}")
+
 
 def test_prostate() -> None:
     print("\n[Step 2 — Prostate]")
@@ -92,6 +111,11 @@ def test_prostate() -> None:
     check(result.metastatic_status == "metastatic", f"metastatic_status={result.metastatic_status!r}")
     check(result.prior_arpi == "yes", f"prior_arpi={result.prior_arpi!r}")
     check(result.biomarker_hrr == "positive", f"biomarker_hrr={result.biomarker_hrr!r}")
+    check(result.classification_is_probability is False, "Rule evidence strength is explicitly not probability")
+    check(exact_trial_anchor("brief_title", "A TheraPeutic trial") == [], "Ordinary words do not trigger TheraP")
+    check(exact_trial_anchor("brief_title", "TheraP randomized trial") == ["TheraP"], "Exact TheraP title anchor is recognized")
+    check(exact_trial_anchor("acronym", "ARANOTE") == ["ARANOTE"], "Exact ARANOTE acronym is recognized")
+    check(exact_trial_anchor("eligibility_inclusion", "ARASENS") == [], "Named anchors are ignored outside title/acronym fields")
 
 
 def test_kidney() -> None:
@@ -110,6 +134,15 @@ def test_kidney() -> None:
     check(result.nephrectomy_status == "prior_nephrectomy", f"nephrectomy_status={result.nephrectomy_status!r}")
     check(result.prior_io == "no", f"prior_io={result.prior_io!r}")
     check(result.prior_systemic_lines == "0", f"prior_systemic_lines={result.prior_systemic_lines!r}")
+
+    result = classify_trial(
+        cancer_type="Kidney/RCC",
+        title="Belzutifan in Metastatic Clear-Cell RCC",
+        eligibility_incl="Metastatic clear-cell RCC without biomarker selection",
+        conditions="metastatic renal cell carcinoma",
+        interventions="belzutifan",
+    )
+    check(result.vhl_status == "unknown", f"Belzutifan intervention does not imply a VHL requirement: {result.vhl_status!r}")
 
     result = classify_trial(
         cancer_type="Kidney/RCC",

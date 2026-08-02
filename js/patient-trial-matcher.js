@@ -1,10 +1,21 @@
 (function (global) {
+  "use strict";
+
   let parserApi = global.PatientQueryParser;
   if (!parserApi && typeof require === "function") {
     try {
       parserApi = require("./patient-query-parser.js");
     } catch (error) {
       parserApi = null;
+    }
+  }
+
+  let schemaApi = global.ClinicalTrialSchema;
+  if (!schemaApi && typeof require === "function") {
+    try {
+      schemaApi = require("./clinical-trial-schema.js");
+    } catch (error) {
+      schemaApi = null;
     }
   }
 
@@ -207,6 +218,22 @@
     stage1_risk_factors: {
       title: "Confirm stage I risk factors",
       message: "Clarify whether stage I risk factors such as lymphovascular invasion are present."
+    },
+    trial_data_incomplete: {
+      title: "Trial structure requires manual review",
+      message: "Cohort boundaries or critical criteria are missing, ambiguous, stale, or not clinician-reviewed. Review the current protocol before referral."
+    },
+    disease_setting_review: {
+      title: "Confirm trial disease setting",
+      message: "The trial-side disease-setting annotation is missing or conflicts with the patient context. The trial remains visible for manual review."
+    },
+    patient_fact_confirmation: {
+      title: "Confirm extracted patient facts",
+      message: "One or more extracted patient facts have not been confirmed by the physician."
+    },
+    phase_preference: {
+      title: "Phase preference differs",
+      message: "The study phase differs from the stated preference. Phase is a preference, not an eligibility exclusion."
     }
   };
 
@@ -291,9 +318,9 @@
           ids.push("crpc_nonmetastatic", "crpc_general");
         } else if (/metastatic/.test(haystack)) {
           if (/post[- ]arpi|2l\+/.test(haystack)) {
-            ids.push("crpc_metastatic_postARPI", "crpc_general");
+            ids.push("crpc_metastatic_postarpi", "crpc_general");
           } else {
-            ids.push("crpc_metastatic_preARPI", "crpc_metastatic_postARPI", "crpc_general");
+            ids.push("crpc_metastatic_prearpi", "crpc_metastatic_postarpi", "crpc_general");
           }
         } else {
           ids.push("crpc_general");
@@ -383,6 +410,21 @@
     return CONFIDENCE_SCORES[(trial.classificationConfidence || "").toUpperCase()] || 0;
   }
 
+  function phaseSet(value) {
+    const normalized = normalizeWhitespace(value).toUpperCase();
+    const phases = [];
+    if (/\b(?:PHASE\s*)?I\b|\bPHASE1\b/.test(normalized)) phases.push("Phase I");
+    if (/\b(?:PHASE\s*)?II\b|\bPHASE2\b/.test(normalized)) phases.push("Phase II");
+    if (/\b(?:PHASE\s*)?III\b|\bPHASE3\b/.test(normalized)) phases.push("Phase III");
+    if (/\b(?:PHASE\s*)?IV\b|\bPHASE4\b/.test(normalized)) phases.push("Phase IV");
+    return phases;
+  }
+
+  function phasePreferenceMatches(trialPhase, preference) {
+    if (!preference) return true;
+    return phaseSet(trialPhase).includes(preference);
+  }
+
   function buildLocationScore(trial, parsedQuery) {
     if (!Array.isArray(parsedQuery.locationPreferences) || parsedQuery.locationPreferences.length === 0) {
       return 0;
@@ -416,8 +458,8 @@
       if (pref === "high_dose" && /high[- ]dose|hdct|stem cell/i.test(trialText)) score += 2;
     });
 
-    if (parsedQuery.phasePreference && trial.phase !== parsedQuery.phasePreference) {
-      return -10;
+    if (parsedQuery.phasePreference && !phasePreferenceMatches(trial.phase, parsedQuery.phasePreference)) {
+      score -= 1;
     }
 
     return score;
@@ -486,13 +528,20 @@
     return Array.from(new Set(ids));
   }
 
-  function trialMatchesDiseaseSetting(trial, parsedQuery) {
+  function trialDiseaseRelation(trial, parsedQuery) {
     const allowedIds = resolveDiseaseIds(parsedQuery);
     if (allowedIds.length === 0) {
-      return true;
+      return "BROAD_QUERY";
     }
+    const trialIds = getTrialDiseaseIds(trial);
+    if (trialIds.length === 0) {
+      return "UNKNOWN_TRIAL_DATA";
+    }
+    return trialIds.some(id => allowedIds.includes(id)) ? "MATCH" : "MISMATCH";
+  }
 
-    return getTrialDiseaseIds(trial).some(id => allowedIds.includes(id));
+  function trialMatchesDiseaseSetting(trial, parsedQuery) {
+    return trialDiseaseRelation(trial, parsedQuery) !== "MISMATCH";
   }
 
   function resolveArpiFact(parsedQuery) {
@@ -826,6 +875,23 @@
     return /(washout|within\s+\d+\s*(?:day|days|week|weeks)\s+(?:prior|before)|recovered from .* prior therapy|prior (?:systemic )?therapy within|anti[- ]cancer therapy within|systemic therapy within)/i.test(text);
   }
 
+  function resolveSystemicWashoutDays(text) {
+    const patterns = [
+      /(?:systemic|anti[- ]cancer|anticancer|cytotoxic|chemotherapy|investigational)[^.]{0,70}?(?:within|for at least|minimum of|washout(?: of)?)\s*(\d+(?:\.\d+)?)\s*(days?|weeks?)/ig,
+      /(?:within|for at least|minimum of|washout(?: of)?)\s*(\d+(?:\.\d+)?)\s*(days?|weeks?)[^.]{0,70}?(?:systemic|anti[- ]cancer|anticancer|cytotoxic|chemotherapy|investigational)/ig
+    ];
+    const days = [];
+    patterns.forEach(pattern => {
+      let match;
+      while ((match = pattern.exec(text))) {
+        const amount = Number(match[1]);
+        if (!Number.isFinite(amount)) continue;
+        days.push(match[2].toLowerCase().startsWith("week") ? amount * 7 : amount);
+      }
+    });
+    return days.length ? Math.max(...days) : null;
+  }
+
   function screeningEcogMax(value) {
     if (value === "ecog_0") return 0;
     if (value === "ecog_1") return 1;
@@ -883,9 +949,7 @@
       addResolvedFact(state.resolvedFacts, "persistent markers after orchiectomy");
     }
 
-    if (Number.isFinite(temporal.sinceLastSystemicTherapyDays) && temporal.sinceLastSystemicTherapyDays <= 14) {
-      addFlag(state.flags, "washout_window");
-    }
+    // Protocol-specific washout windows are evaluated against exact criterion text below.
   }
 
   function applyScreeningVerification(state) {
@@ -913,22 +977,20 @@
     }
 
     if (needsLabReview) {
-      const hasHelpfulScreeningData = Boolean(screening.labState || screening.organFunctionState);
-      if (!hasHelpfulScreeningData) {
-        addFlag(state.flags, "lab_organ_function");
-      } else if (screening.labState === "within_range" || screening.organFunctionState === "adequate") {
-        addResolvedFact(state.resolvedFacts, "baseline labs and organ function documented");
-      } else {
-        addFlag(state.flags, "lab_organ_function");
-      }
+      // Generic phrases such as "labs normal" or "adequate organ function" never
+      // satisfy protocol-specific numeric thresholds. Exact, dated values are required.
+      addFlag(state.flags, "lab_organ_function");
     }
 
     if (needsWashoutReview) {
       const days = state.parsedQuery.temporalFacts?.sinceLastSystemicTherapyDays;
-      if (!Number.isFinite(days)) {
+      const requiredDays = resolveSystemicWashoutDays(eligibilityText);
+      if (!Number.isFinite(days) || !Number.isFinite(requiredDays)) {
         addFlag(state.flags, "washout_window");
-      } else if (days > 14) {
-        addResolvedFact(state.resolvedFacts, `washout ${days}d`);
+      } else if (days >= requiredDays) {
+        addResolvedFact(state.resolvedFacts, `systemic-therapy washout ${days}d (protocol requires ${requiredDays}d)`);
+      } else {
+        state.excludes.push("washout_window");
       }
     }
   }
@@ -947,41 +1009,126 @@
       queryAxes: parsedQuery.clinicalAxes || {},
       resolvedFacts,
       flags,
-      excludes
+      excludes,
+      diseaseRelation: trial.patientSearchDiseaseRelation || "BROAD_QUERY"
     };
     applyTemporalSignals(state);
     applyScreeningVerification(state);
     return state;
   }
 
+  function buildLegacyEvaluations(state) {
+    const evaluations = [];
+    state.resolvedFacts.forEach((fact, index) => {
+      evaluations.push({
+        criterionId: `legacy:satisfied:${index + 1}`,
+        criterion: {
+          criterionId: `legacy:satisfied:${index + 1}`,
+          criticality: "supporting",
+          reviewStatus: "machine_extracted",
+          modeledStatus: "modeled",
+          sourceSpan: null
+        },
+        status: "SATISFIED",
+        patientFactIds: [],
+        reason: fact,
+        hardExclusionAllowed: false,
+        provenanceClass: "legacy_rule"
+      });
+    });
+    state.flags.forEach((flag, index) => {
+      evaluations.push({
+        criterionId: `legacy:unknown:${flag.code}:${index + 1}`,
+        criterion: {
+          criterionId: `legacy:unknown:${flag.code}:${index + 1}`,
+          criticality: "hard",
+          reviewStatus: "machine_extracted",
+          modeledStatus: "modeled",
+          sourceSpan: null
+        },
+        status: "UNKNOWN",
+        unknownReason: "PATIENT_FACT_MISSING",
+        patientFactIds: [],
+        reason: flag.title,
+        question: flag.message,
+        hardExclusionAllowed: false,
+        provenanceClass: "legacy_rule"
+      });
+    });
+    Array.from(new Set(state.excludes)).forEach((code, index) => {
+      evaluations.push({
+        criterionId: `legacy:conflict:${code}:${index + 1}`,
+        criterion: {
+          criterionId: `legacy:conflict:${code}:${index + 1}`,
+          criticality: "hard",
+          reviewStatus: "machine_extracted",
+          modeledStatus: "modeled",
+          sourceSpan: null
+        },
+        status: "VIOLATED",
+        patientFactIds: [],
+        reason: `Potential rule conflict: ${String(code).replace(/_/g, " ")}.`,
+        hardExclusionAllowed: false,
+        provenanceClass: "legacy_rule"
+      });
+    });
+    return evaluations;
+  }
+
   function finalizeMatch(state) {
     const preferenceScore = buildPreferenceScore(state.trial, state.parsedQuery);
-    if (preferenceScore < 0) {
-      return { included: false, excludedReason: "Phase preference mismatch." };
+    const clinicalFlags = state.flags.slice();
+    const legacyPhaseCompatible = phasePreferenceMatches(state.trial.phase, state.parsedQuery.phasePreference);
+    if (state.parsedQuery.phasePreference && !phasePreferenceMatches(state.trial.phase, state.parsedQuery.phasePreference)) {
+      addFlag(state.flags, "phase_preference");
     }
-
-    if (state.excludes.length > 0) {
-      return { included: false, excludedReason: state.excludes[0] };
+    if (["UNKNOWN_TRIAL_DATA", "MISMATCH"].includes(state.diseaseRelation)) {
+      addFlag(state.flags, "disease_setting_review");
+    }
+    const reviewFacts = state.parsedQuery.patientFactSet?.facts || state.parsedQuery.candidateFacts || [];
+    if (reviewFacts.some(fact => canonicalToken(fact.confirmation) === "unreviewed")) {
+      addFlag(state.flags, "patient_fact_confirmation");
     }
 
     const locationScore = buildLocationScore(state.trial, state.parsedQuery);
-    const badge = state.flags.length > 0 ? "Possible match" : "Strong match";
+    const hasConflict = state.excludes.length > 0;
+    const preliminaryTier = hasConflict
+      ? "MODELED_CONFLICT"
+      : state.flags.length > 0
+        ? "POTENTIALLY_RELEVANT"
+        : "DISEASE_CONTEXT_RETRIEVAL";
+    const badge = schemaApi?.REVIEW_TIER_LABELS?.[preliminaryTier] || "Potentially relevant — automated review incomplete";
     const reasonText = state.resolvedFacts.length > 0
-      ? `Matches: ${state.resolvedFacts.join(" · ")}`
-      : "Matches: disease setting — multiple eligibility axes unresolved";
+      ? `Supported evidence: ${state.resolvedFacts.join(" · ")}`
+      : "Disease-context retrieval; multiple eligibility axes remain unresolved.";
+    const legacyEvaluations = buildLegacyEvaluations(state);
+    const tierBase = {
+      PRIORITY_PROTOCOL_REVIEW: 500,
+      POTENTIALLY_RELEVANT: 400,
+      MANUAL_REVIEW_TRIAL_DATA: 300,
+      DISEASE_CONTEXT_RETRIEVAL: 200,
+      MODELED_CONFLICT: 100
+    }[preliminaryTier] || 0;
 
     return {
       included: true,
       badge,
-      badgeTone: state.flags.length > 0 ? "possible" : "strong",
+      badgeTone: preliminaryTier === "MODELED_CONFLICT" ? "conflict" : preliminaryTier === "POTENTIALLY_RELEVANT" ? "potential" : "retrieval",
+      reviewTier: preliminaryTier,
+      legacyBadge: clinicalFlags.length > 0 ? "Possible match" : "Strong match",
+      legacyIncluded: !hasConflict && legacyPhaseCompatible && state.diseaseRelation !== "MISMATCH",
       reasonText,
       resolvedFacts: state.resolvedFacts,
       flags: state.flags,
+      potentialConflicts: Array.from(new Set(state.excludes)),
+      hardExcluded: false,
+      legacyEvaluations,
+      diseaseRelation: state.diseaseRelation,
       preferenceScore,
       locationScore,
       aiExtractedReview: Object.keys(state.trialAxes).length > 0,
       sourceTagSummary: uniqueSources(state.trial),
-      sortScore: (state.flags.length === 0 ? 1000 : 500) + (preferenceScore * 20) + (locationScore * 10) + (confidenceScore(state.trial) * 5) + Number(state.trial.siteCount || 0)
+      sortScore: tierBase + (state.resolvedFacts.length * 10) + (preferenceScore * 2) + locationScore
     };
   }
 
@@ -1046,7 +1193,7 @@
       return true;
     }
     if (trialToken === "cis_plus_papillary") {
-      return ["cis_plus_papillary", "cis_only", "papillary_only"].includes(queryToken);
+      return queryToken === "cis_plus_papillary";
     }
     return false;
   }
@@ -1089,13 +1236,23 @@
 
   function deriveBladderTrialAxes(trial) {
     const trialAxes = { ...(trial.clinicalAxes || {}) };
-    const text = buildTrialSearchText(trial);
+    const text = buildTrialEligibilityText(trial);
+    const axisSources = trial?.sourceTags?.clinicalAxes || {};
+    const fgfrRequirement = /(?:must|required|eligible|with|harbor(?:s|ing)?)[^.]{0,50}fgfr3[^.]{0,40}(?:mutation|fusion|alteration|positive)|fgfr3[^.]{0,50}(?:is required|required for eligibility)/i;
+    const her2Requirement = /(?:must|required|eligible|with|express(?:es|ing)?)[^.]{0,50}(?:her2|erbb2)[^.]{0,40}(?:3\+|positive|overexpress)|(?:her2|erbb2)[^.]{0,50}(?:is required|required for eligibility)/i;
 
-    if (!isMeaningfulAxisValue(trialAxes.fgfr3Status) && /(fgfr3|erdafitinib|rogaratinib|infigratinib|pemigatinib|futibatinib)/i.test(text)) {
+    if (isMeaningfulAxisValue(trialAxes.fgfr3Status) && /ai|model|inferred/i.test(axisSources.fgfr3Status || "") && !fgfrRequirement.test(text)) {
+      trialAxes.fgfr3Status = "";
+    }
+    if (isMeaningfulAxisValue(trialAxes.her2Status) && /ai|model|inferred/i.test(axisSources.her2Status || "") && !her2Requirement.test(text)) {
+      trialAxes.her2Status = "";
+    }
+
+    if (!isMeaningfulAxisValue(trialAxes.fgfr3Status) && fgfrRequirement.test(text)) {
       trialAxes.fgfr3Status = "susceptible_alteration";
     }
 
-    if (!isMeaningfulAxisValue(trialAxes.her2Status) && /(her2|erbb2|trastuzumab deruxtecan|t-dxd|disitamab|zanidatamab)/i.test(text)) {
+    if (!isMeaningfulAxisValue(trialAxes.her2Status) && her2Requirement.test(text)) {
       trialAxes.her2Status = "ihc_3_plus";
     }
 
@@ -1239,8 +1396,8 @@
   function histologyGroup(value) {
     const token = canonicalToken(value);
     if (!token) return "";
-    if (token.includes("seminoma")) return "seminoma";
     if (token.includes("nsgct") || token.includes("nonseminoma") || token.includes("yolk_sac") || token.includes("mixed")) return "nsgct";
+    if (token.includes("seminoma")) return "seminoma";
     if (token.includes("clear_cell")) return "clear_cell";
     if (token.includes("papillary")) return "papillary";
     if (token.includes("chromophobe")) return "chromophobe";
@@ -1361,18 +1518,32 @@
     return true;
   }
 
-  function clinicalStageMatches(trialValue, queryValue) {
+  function vhlStatusMatches(trialValue, queryValue) {
     const trialToken = canonicalToken(trialValue);
     const queryToken = canonicalToken(queryValue);
+    if (!trialToken || !queryToken) return false;
+    if (trialToken === queryToken) return true;
+    if (trialToken === "vhl_disease_germline") return queryToken === "vhl_disease_germline";
+    if (trialToken === "somatic_vhl_mutation") return queryToken === "somatic_vhl_mutation";
+    if (["vhl_unspecified", "vhl_altered"].includes(trialToken)) {
+      return ["vhl_disease_germline", "somatic_vhl_mutation", "vhl_unspecified", "vhl_altered"].includes(queryToken);
+    }
+    return false;
+  }
+
+  function clinicalStageMatches(trialValue, queryValue) {
+    const trialToken = schemaApi?.normalizeAxisValue ? schemaApi.normalizeAxisValue("clinicalStage", trialValue) : canonicalToken(trialValue);
+    const queryToken = schemaApi?.normalizeAxisValue ? schemaApi.normalizeAxisValue("clinicalStage", queryValue) : canonicalToken(queryValue);
     if (!trialToken || !queryToken) {
       return true;
     }
     if (trialToken === queryToken) {
       return true;
     }
-    if (trialToken === "stage_1_unspecified" && queryToken === "stage_1a") return true;
-    if (trialToken === "stage_3_unspecified" && ["stage_2c_3", "stage_3_unspecified"].includes(queryToken)) return true;
-    if (queryToken === "stage_1_unspecified" && trialToken === "stage_1a") return true;
+    if (trialToken === "stage_1_unspecified" && ["stage_1a", "stage_1b", "stage_1s"].includes(queryToken)) return true;
+    if (queryToken === "stage_1_unspecified" && ["stage_1a", "stage_1b", "stage_1s"].includes(trialToken)) return true;
+    if (trialToken === "stage_2_unspecified" && ["stage_2a", "stage_2b", "stage_2c"].includes(queryToken)) return true;
+    if (trialToken === "stage_3_unspecified" && ["stage_3a", "stage_3b", "stage_3c"].includes(queryToken)) return true;
     return false;
   }
 
@@ -1847,7 +2018,16 @@
 
     if (isMeaningfulAxisValue(trialAxes.vhlStatus)) {
       if (queryAxes.vhlStatus) {
-        addResolvedFact(state.resolvedFacts, "VHL-altered");
+        if (!vhlStatusMatches(trialAxes.vhlStatus, queryAxes.vhlStatus)) {
+          state.excludes.push("vhl_status");
+        } else if (canonicalToken(queryAxes.vhlStatus) === "vhl_disease_germline") {
+          addResolvedFact(state.resolvedFacts, "germline VHL disease");
+        } else if (canonicalToken(queryAxes.vhlStatus) === "somatic_vhl_mutation") {
+          addResolvedFact(state.resolvedFacts, "somatic VHL alteration");
+        } else {
+          addResolvedFact(state.resolvedFacts, "VHL status documented");
+          addFlag(state.flags, "vhl_status");
+        }
       } else {
         addFlag(state.flags, "vhl_status");
       }
@@ -2004,13 +2184,146 @@
 
     if (isMeaningfulAxisValue(trialAxes.stage1RiskFactors)) {
       if (queryAxes.stage1RiskFactors) {
-        addResolvedFact(state.resolvedFacts, "stage I risk factors present");
+        const trialRisk = schemaApi?.normalizeAxisValue ? schemaApi.normalizeAxisValue("stage1RiskFactors", trialAxes.stage1RiskFactors) : canonicalToken(trialAxes.stage1RiskFactors);
+        const queryRisk = schemaApi?.normalizeAxisValue ? schemaApi.normalizeAxisValue("stage1RiskFactors", queryAxes.stage1RiskFactors) : canonicalToken(queryAxes.stage1RiskFactors);
+        if (trialRisk !== queryRisk) {
+          state.excludes.push("stage1_risk_factors");
+        } else {
+          addResolvedFact(state.resolvedFacts, queryRisk === "with_risk_factors" ? "stage I risk factors present" : "stage I risk factors absent");
+        }
       } else {
         addFlag(state.flags, "stage1_risk_factors");
       }
     }
 
     return finalizeMatch(state);
+  }
+
+  function buildPatientFactSet(parsedQuery) {
+    if (parsedQuery?.patientFactSet && Array.isArray(parsedQuery.patientFactSet.facts)) {
+      return parsedQuery.patientFactSet;
+    }
+    const facts = Array.isArray(parsedQuery?.candidateFacts) ? parsedQuery.candidateFacts : [];
+    return {
+      schemaVersion: schemaApi?.SCHEMA_VERSION || "1.0.0",
+      patientVersion: "unconfirmed-parser-output",
+      facts,
+      contradictions: Array.isArray(parsedQuery?.contradictions)
+        ? parsedQuery.contradictions
+        : schemaApi?.detectContradictions?.(facts) || [],
+      ignoredText: parsedQuery?.ignoredText || []
+    };
+  }
+
+  function isTrialSourceCurrent(trial, maximumAgeDays) {
+    const raw = trial?.registryVersion || trial?.lastSyncAt || trial?.lastUpdated || "";
+    const timestamp = Date.parse(raw);
+    if (!Number.isFinite(timestamp)) return false;
+    const ageDays = Math.max(0, (Date.now() - timestamp) / 86400000);
+    return ageDays <= (maximumAgeDays || 7);
+  }
+
+  function criterionCoverage(evaluations) {
+    const weighted = (evaluations || []).filter(evaluation => evaluation.criterion?.criticality !== "supporting");
+    if (weighted.length === 0) return 0;
+    const supported = weighted.filter(evaluation => ["SATISFIED", "VIOLATED"].includes(evaluation.status)).length;
+    return supported / weighted.length;
+  }
+
+  function reviewTierTone(reviewTier) {
+    if (reviewTier === "PRIORITY_PROTOCOL_REVIEW") return "priority";
+    if (reviewTier === "POTENTIALLY_RELEVANT") return "potential";
+    if (reviewTier === "MANUAL_REVIEW_TRIAL_DATA") return "manual";
+    if (reviewTier === "MODELED_CONFLICT") return "conflict";
+    return "retrieval";
+  }
+
+  function enrichMatchForCohort(trial, cohort, parsedQuery, legacyMatch) {
+    const patientFactSet = buildPatientFactSet(parsedQuery);
+    const criteria = [].concat(cohort?.sharedCriteria || [], cohort?.cohortSpecificCriteria || []);
+    const sourceCurrent = isTrialSourceCurrent(trial, 7);
+    const structuredEvaluations = schemaApi?.evaluateCriterion
+      ? criteria.map(criterion => schemaApi.evaluateCriterion(criterion, patientFactSet, { trialSourceIsCurrent: sourceCurrent }))
+      : [];
+    if (criteria.length === 0) {
+      structuredEvaluations.push({
+        criterionId: `${cohort.cohortId}:criteria-unavailable`,
+        criterion: {
+          criterionId: `${cohort.cohortId}:criteria-unavailable`,
+          criticality: "hard",
+          reviewStatus: "unreviewed",
+          modeledStatus: "not_modeled",
+          sourceSpan: null
+        },
+        status: "NOT_MODELED",
+        unknownReason: "TRIAL_SOURCE_AMBIGUOUS",
+        patientFactIds: [],
+        patientFacts: [],
+        reason: "Cohort-specific eligibility criteria are not available as reviewed structured data.",
+        question: "Review the current protocol and confirm the applicable cohort.",
+        trialSourceIsCurrent: sourceCurrent,
+        hardExclusionAllowed: false
+      });
+    }
+
+    const evaluations = structuredEvaluations.concat(legacyMatch.legacyEvaluations || []);
+    const trialQuality = schemaApi?.calculateTrialDataQuality
+      ? schemaApi.calculateTrialDataQuality(cohort, trial)
+      : { tier: "machine_extracted", criticalCriteriaModeled: 0, currentLocalCohort: false };
+    let reviewTier = schemaApi?.classifyReviewTier
+      ? schemaApi.classifyReviewTier({
+          evaluations,
+          trialQuality,
+          diseaseRelation: legacyMatch.diseaseRelation,
+          positiveDiseaseEvidence: legacyMatch.diseaseRelation === "MATCH" && Boolean(parsedQuery.diseaseLabel),
+          hasUnconfirmedCriticalFacts: patientFactSet.facts.some(fact => canonicalToken(fact.confirmation) === "unreviewed") || patientFactSet.contradictions.length > 0
+        })
+      : legacyMatch.reviewTier;
+    if ((legacyMatch.potentialConflicts || []).length > 0) reviewTier = "MODELED_CONFLICT";
+    if (legacyMatch.diseaseRelation === "MISMATCH" && trialQuality.tier !== "reviewed") reviewTier = "MANUAL_REVIEW_TRIAL_DATA";
+
+    const flags = (legacyMatch.flags || []).slice();
+    if (reviewTier === "MANUAL_REVIEW_TRIAL_DATA") addFlag(flags, "trial_data_incomplete");
+    const tierBase = {
+      PRIORITY_PROTOCOL_REVIEW: 5,
+      POTENTIALLY_RELEVANT: 4,
+      MANUAL_REVIEW_TRIAL_DATA: 3,
+      DISEASE_CONTEXT_RETRIEVAL: 2,
+      MODELED_CONFLICT: 1
+    }[reviewTier] || 0;
+    const supportedCount = evaluations.filter(evaluation => evaluation.status === "SATISFIED").length;
+    const unknownCount = evaluations.filter(evaluation => ["UNKNOWN", "NOT_MODELED"].includes(evaluation.status)).length;
+    const hardExcluded = evaluations.some(evaluation => evaluation.hardExclusionAllowed === true);
+    const label = schemaApi?.REVIEW_TIER_LABELS?.[reviewTier] || legacyMatch.badge;
+
+    return {
+      ...legacyMatch,
+      cohortId: cohort.cohortId,
+      cohortLabel: cohort.label,
+      cohort,
+      badge: label,
+      badgeTone: reviewTierTone(reviewTier),
+      reviewTier,
+      hardExcluded,
+      flags,
+      evaluations,
+      trialDataQuality: trialQuality,
+      patientVersion: patientFactSet.patientVersion,
+      coverage: criterionCoverage(evaluations),
+      relevance: {
+        score: Math.max(0, Math.min(1, (supportedCount + (legacyMatch.resolvedFacts || []).length) / Math.max(1, evaluations.length + 2))),
+        isProbability: false,
+        components: {
+          disease: legacyMatch.diseaseRelation === "MATCH" ? 1 : legacyMatch.diseaseRelation === "BROAD_QUERY" ? 0.5 : 0,
+          clinicalSupport: supportedCount,
+          unknown: unknownCount,
+          sitePreference: legacyMatch.locationScore || 0,
+          physicianPreference: legacyMatch.preferenceScore || 0
+        }
+      },
+      reasonText: `${cohort.label}: ${legacyMatch.reasonText}`,
+      sortScore: (tierBase * 10000) + (supportedCount * 100) - (unknownCount * 10) + ((legacyMatch.preferenceScore || 0) * 2) + (legacyMatch.locationScore || 0)
+    };
   }
 
   function matchSingleTrial(trialInput, parsedQueryInput) {
@@ -2025,60 +2338,94 @@
       return { included: false, excludedReason: "Cancer type mismatch." };
     }
 
-    if (!trialMatchesDiseaseSetting(trial, parsedQuery)) {
-      return { included: false, excludedReason: "Disease setting mismatch." };
-    }
+    trial.patientSearchDiseaseRelation = trialDiseaseRelation(trial, parsedQuery);
 
+    let legacyMatch;
     if (parsedQuery.cancerType === "Prostate") {
-      return matchProstateTrial(trial, parsedQuery);
+      legacyMatch = matchProstateTrial(trial, parsedQuery);
+    } else if (parsedQuery.cancerType === "Bladder") {
+      legacyMatch = matchBladderTrial(trial, parsedQuery);
+    } else if (parsedQuery.cancerType === "Kidney") {
+      legacyMatch = matchKidneyTrial(trial, parsedQuery);
+    } else if (parsedQuery.cancerType === "Testicular") {
+      legacyMatch = matchTesticularTrial(trial, parsedQuery);
+    } else {
+      return { included: false, excludedReason: "Unsupported cancer type." };
     }
-    if (parsedQuery.cancerType === "Bladder") {
-      return matchBladderTrial(trial, parsedQuery);
-    }
-    if (parsedQuery.cancerType === "Kidney") {
-      return matchKidneyTrial(trial, parsedQuery);
-    }
-    if (parsedQuery.cancerType === "Testicular") {
-      return matchTesticularTrial(trial, parsedQuery);
-    }
-
-    return { included: false, excludedReason: "Unsupported cancer type." };
+    const cohorts = schemaApi?.normalizeCohorts ? schemaApi.normalizeCohorts(trial) : [{ cohortId: `${trial.id}:unsegmented`, label: "Unsegmented trial record", sharedCriteria: [], cohortSpecificCriteria: [] }];
+    const cohortMatches = cohorts.map(cohort => enrichMatchForCohort(trial, cohort, parsedQuery, legacyMatch));
+    return { ...cohortMatches[0], cohortMatches, normalizedTrial: trial };
   }
 
   function matchTrials(options) {
     const trials = Array.isArray(options?.trials) ? options.trials : [];
-    const parsedQuery = options?.parsedQuery || (parserApi ? parserApi.parse(options?.query || "") : { supported: false });
+    const originalParsedQuery = options?.parsedQuery || (parserApi ? parserApi.parse(options?.query || "") : { supported: false });
+    const parsedQuery = originalParsedQuery?.patientFactSet && parserApi?.reconcileReviewedFacts && !originalParsedQuery.reviewReconciled
+      ? parserApi.reconcileReviewedFacts(originalParsedQuery, originalParsedQuery.patientFactSet)
+      : originalParsedQuery;
 
     const result = {
       parsedQuery,
-      strongMatches: [],
-      possibleMatches: [],
+      priorityReview: [],
+      potentiallyRelevant: [],
+      manualReview: [],
+      modeledConflicts: [],
+      diseaseContextOnly: [],
+      evaluatedCohorts: [],
+      auditTrail: [],
+      totalCatalogRecords: trials.length,
+      totalSameCancerRecords: 0,
       totalConsidered: 0
     };
 
     trials.forEach(trial => {
-      const match = matchSingleTrial(trial, parsedQuery);
-      if (!match.included) {
+      const cancerTypes = [trial?.cancerType].concat(trial?.cancerTypes || []);
+      if (!cancerTypes.includes(parsedQuery.cancerType)) {
+        result.auditTrail.push({ trialId: trial?.nctId || trial?.id || "unknown", status: "NOT_EVALUATED", reason: "Cancer type mismatch." });
         return;
       }
-
-      result.totalConsidered += 1;
-      const entry = { trial, match };
-      if (match.badgeTone === "strong") {
-        result.strongMatches.push(entry);
-      } else {
-        result.possibleMatches.push(entry);
+      result.totalSameCancerRecords += 1;
+      const match = matchSingleTrial(trial, parsedQuery);
+      if (!match.included) {
+        result.auditTrail.push({ trialId: trial?.nctId || trial?.id || "unknown", status: "NOT_EVALUATED", reason: match.excludedReason || "Unknown" });
+        return;
       }
+      (match.cohortMatches || [match]).forEach(cohortMatch => {
+        result.totalConsidered += 1;
+        const entry = { trial, match: cohortMatch };
+        result.evaluatedCohorts.push(entry);
+        result.auditTrail.push({
+          trialId: trial?.nctId || trial?.id || "unknown",
+          cohortId: cohortMatch.cohortId,
+          status: "EVALUATED",
+          reviewTier: cohortMatch.reviewTier,
+          hardExcluded: cohortMatch.hardExcluded,
+          diseaseRelation: cohortMatch.diseaseRelation,
+          evaluationCount: cohortMatch.evaluations.length
+        });
+        if (cohortMatch.reviewTier === "PRIORITY_PROTOCOL_REVIEW") result.priorityReview.push(entry);
+        else if (cohortMatch.reviewTier === "POTENTIALLY_RELEVANT") result.potentiallyRelevant.push(entry);
+        else if (cohortMatch.reviewTier === "MANUAL_REVIEW_TRIAL_DATA") result.manualReview.push(entry);
+        else if (cohortMatch.reviewTier === "MODELED_CONFLICT") result.modeledConflicts.push(entry);
+        else result.diseaseContextOnly.push(entry);
+      });
     });
 
-    result.strongMatches.sort((a, b) => b.match.sortScore - a.match.sortScore);
-    result.possibleMatches.sort((a, b) => b.match.sortScore - a.match.sortScore);
+    [result.priorityReview, result.potentiallyRelevant, result.manualReview, result.modeledConflicts, result.diseaseContextOnly]
+      .forEach(group => group.sort((a, b) => b.match.sortScore - a.match.sortScore));
+    // Compatibility aliases for older consumers. The UI no longer labels these
+    // arrays as strong/possible, and no result is promoted because flags are empty.
+    result.strongMatches = result.priorityReview;
+    result.possibleMatches = result.potentiallyRelevant.concat(result.manualReview, result.diseaseContextOnly);
+    result.conflictMatches = result.modeledConflicts;
     return result;
   }
 
   const api = {
     matchSingleTrial,
     matchTrials,
+    trialDiseaseRelation,
+    resolveSystemicWashoutDays,
     FLAG_DEFINITIONS
   };
 
