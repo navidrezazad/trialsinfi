@@ -30,6 +30,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r production_ready_pipeline/requirements.txt
 
+      - name: Validate deterministic search safety
+        run: |
+          node production_ready_pipeline/tests/test_schema_contract.js
+          node production_ready_pipeline/tests/test_scientific_prescreen.js
+          node production_ready_pipeline/tests/test_pro_review_regressions.js
+          python production_ready_pipeline/tests/test_clinical_schema.py
+          python production_ready_pipeline/tests/test_curator_review.py
+          python production_ready_pipeline/tests/test_pro_review_regressions.py
+
       - name: Generate website catalog
         run: |
           mkdir -p build
@@ -37,6 +46,7 @@ jobs:
             --skip-excel \
             --skip-updates \
             --website-catalog-out build/website_trials.json
+          python production_ready_pipeline/migrate_catalog_schema.py --catalog build/website_trials.json --write
 
       - name: Upload generated catalog as workflow artifact
         uses: actions/upload-artifact@v6

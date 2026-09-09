@@ -117,7 +117,7 @@ function testBenchmarkAndTelemetry() {
   assert.equal(metrics.criteria.criticalViolationSensitivity, 1);
   assert.equal(metrics.coverage.selectiveErrorRate, 0);
   assert.ok(metrics.calibration.brier < 0.001);
-  assert.equal(Benchmark.assessGoNo(metrics).decision, 'GO');
+  assert.equal(Benchmark.assessGoNo(metrics).decision, 'NO_GO', 'Synthetic perfect outputs do not establish independent clinical validation.');
   const boundaryMetrics = structuredClone(metrics);
   boundaryMetrics.criteria.unsafeHardExclusion95.upper = 0.02;
   assert.equal(Benchmark.assessGoNo(boundaryMetrics).decision, 'NO_GO', 'The unsafe-exclusion upper bound is strictly below 2%.');

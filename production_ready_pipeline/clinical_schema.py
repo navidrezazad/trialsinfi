@@ -37,6 +37,14 @@ def stable_hash(value: Any) -> str:
     return f"sha256:{hashlib.sha256(serialized.encode('utf-8')).hexdigest()}"
 
 
+def source_content_hash(trial: dict[str, Any]) -> str:
+    """Hash actual source fields, never the cached hash or derived annotations."""
+    fields = ("nctId", "title", "description", "conditions", "interventions", "inclusionCriteria", "exclusionCriteria", "eligibilityCriteria", "minimumAge", "maximumAge", "minAge", "maxAge", "sex", "status", "sites")
+    return stable_hash({key: trial.get(key) for key in fields if key != "sites"} | {
+        "sites": [{key: site.get(key) for key in ("siteId", "institution", "city", "state", "locationStatus", "status", "sourceVerifiedDate")} for site in trial.get("sites") or []]
+    })
+
+
 def _parse_age_years(value: str) -> float | None:
     match = re.search(r"(\d+(?:\.\d+)?)\s*(years?|months?|weeks?|days?)?", value or "", re.I)
     if not match:
@@ -124,7 +132,7 @@ def _iter_criterion_segments(text: str) -> Iterable[tuple[int, int, str]]:
     source = text or ""
     if not source.strip():
         return
-    pattern = re.compile(r"(?:^|\n|(?<=\.)\s+|(?<=;)\s+)(?:[-*•]\s*|\d+[.)]\s*)?")
+    pattern = re.compile(r"(?:^|\n)(?:[-*•]\s*|\d+[.)]\s*)?")
     boundaries = [match.end() for match in pattern.finditer(source)]
     if not boundaries or boundaries[0] != 0:
         boundaries.insert(0, 0)
@@ -211,7 +219,7 @@ def _lab_predicates(segment: str) -> tuple[list[dict[str, Any]], bool]:
         elif "u/l" in unit_token:
             canonical_unit = "U/L"
         else:
-            canonical_unit = "mL/min"
+            canonical_unit = "mL/min/1.73m2" if "1.73" in unit_token else "mL/min"
 
         predicates.append({
             "op": "FACT",
@@ -350,7 +358,7 @@ def _demographic_predicates(segment: str) -> list[dict[str, Any]]:
     return predicates
 
 
-def _recognized_predicate(segment: str, *, allow_demographics: bool = True) -> tuple[dict[str, Any] | None, float | None]:
+def _legacy_recognized_predicate(segment: str, *, allow_demographics: bool = True) -> tuple[dict[str, Any] | None, float | None]:
     predicates: list[dict[str, Any]] = []
     confidences: list[float] = []
 
@@ -389,6 +397,62 @@ def _recognized_predicate(segment: str, *, allow_demographics: bool = True) -> t
     if len(predicates) == 1:
         return predicates[0], confidences[0]
     return {"op": "AND", "args": predicates, "label": "Compound protocol criterion"}, min(confidences)
+
+
+def _recognized_predicate(segment: str, *, allow_demographics: bool = True) -> tuple[dict[str, Any] | None, float | None]:
+    """Only a complete supported clause may acquire modeled authority.
+
+    Substring extractors are proposal helpers. Any remaining restriction,
+    exception, temporal anchor or unparsed connective makes the whole clause
+    review-required. Explicit simple AND/OR is preserved without precedence guesses.
+    """
+    text = segment.strip().rstrip(".;").strip()
+    if allow_demographics:
+        complete_demographic = (
+            r"(?:participants must be\s+)?\d{1,3}\s+years of age\s+or\s+(?:older|younger)"
+            r"|age\s+\d{1,3}\s+to\s+\d{1,3}\s+years"
+            r"|(?:male|female) participants only, age at least \d{1,3} years"
+        )
+        if re.fullmatch(complete_demographic, text, re.I):
+            predicates = _demographic_predicates(text)
+            if predicates:
+                return (predicates[0] if len(predicates) == 1 else {"op": "AND", "args": predicates}), 0.99
+    if re.search(r"\b(?:unless|except|either|whichever|and/or)\b|[()]", text, re.I):
+        return None, None
+    connective = re.findall(r"\s+(and|or)\s+", text, re.I)
+    if connective and not re.fullmatch(r"(?:ECOG|performance status)\s*[0-4]\s+or\s+[0-4]", text, re.I):
+        if len(set(item.lower() for item in connective)) != 1:
+            return None, None
+        parts = re.split(r"\s+(?:and|or)\s+", text, flags=re.I)
+        values = [_recognized_predicate(part, allow_demographics=allow_demographics)[0] for part in parts]
+        if any(value is None for value in values):
+            return None, None
+        return {"op": connective[0].upper(), "args": values}, None
+    ecog = re.fullmatch(r"(?:ECOG|(?:ECOG )?performance status)\s*(?:(?P<op><=|>=|≤|≥|<|>|=)\s*)?(?P<a>[0-4])(?:\s*(?P<join>-|to|or|/)\s*(?P<b>[0-4]))?", text, re.I)
+    if ecog:
+        base = {"op": "FACT", "concept": "ecogStatus", "predicate": "has", "label": "ECOG performance status"}
+        a, b = int(ecog["a"]), int(ecog["b"]) if ecog["b"] else None
+        if b is not None:
+            if ecog["op"] or b < a:
+                return None, None
+            values = list(range(a, b + 1)) if ecog["join"].lower() in {"-", "to"} else [a, b]
+            return dict(base, operator="IN", value=values), None
+        return dict(base, operator=_comparison_operator(ecog["op"] or "="), value=a), None
+    labs, incomplete = _lab_predicates(text)
+    if labs and not incomplete and len(labs) == 1:
+        offset = labs[0]["sourceOffset"]
+        if offset["start"] == 0 and offset["end"] == len(text):
+            return labs[0], None
+    if allow_demographics:
+        age = re.fullmatch(r"age\s*(>=|<=|≥|≤|>|<|=)\s*(\d{1,3})(?:\s*years?(?: of age)?)?", text, re.I)
+        if age and 0 <= int(age[2]) <= 120:
+            return {"op": "FACT", "concept": "ageYears", "predicate": "has", "operator": _comparison_operator(age[1]), "value": int(age[2])}, None
+        sex_match = re.fullmatch(r"(?:sex|gender)\s*[:=]\s*(male|female)", text, re.I)
+        if sex_match:
+            return {"op": "FACT", "concept": "administrativeSex", "predicate": "has", "operator": "EQ", "value": sex_match[1].lower()}, None
+    # No positive 'received within' statement is converted into a washout.
+    # Washout and anchored measurement clauses await a complete reviewed AST.
+    return None, None
 
 
 def extract_criteria(

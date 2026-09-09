@@ -150,7 +150,7 @@
       .map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?"))
       .join("|");
     mask(
-      new RegExp(`\\b(?:considering|planning|planned\\s+(?:for|to\\s+start)?|may\\s+start|might\\s+start|candidate\\s+for|recommended|will\\s+start|to\\s+start)\\s+(?:treatment\\s+with\\s+)?(?:${therapyAlternation})\\b`, "i"),
+      new RegExp(`\\b(?:considering|planning|planned\\s+(?:for|to\\s+start)?|may\\s+start|might\\s+start|candidate\\s+for|recommended|will\\s+start|to\\s+start)\\s+(?:treatment\\s+with\\s+)?(?:${therapyAlternation})(?:\\s*(?:\\+|and|plus|/)\\s*(?:${therapyAlternation}))*\\b`, "i"),
       "planned_treatment_not_prior",
       "Planned or hypothetical treatment was not counted as prior exposure."
     );
@@ -493,6 +493,7 @@
   }
 
   function detectDiseaseVolume(text) {
+    text = text.replace(/\b(?:no|without|absent)\b[^.;\n]{0,25}(?:liver|lung|visceral)\s+(?:metastases|mets|disease|nodules?)/gi, '');
     if (/oligometastatic|oligo[- ]metastatic/i.test(text)) {
       return "oligometastatic";
     }
@@ -536,6 +537,7 @@
   }
 
   function detectProstateVolumeClass(text) {
+    text = text.replace(/\b(?:no|without|absent)\b[^.;\n]{0,25}(?:liver|lung|visceral)\s+(?:metastases|mets|disease|nodules?)/gi, '');
     if (/oligometastatic|oligo[- ]metastatic/i.test(text)) {
       return "oligometastatic";
     }
@@ -716,7 +718,7 @@
 
   function hasExplicitNegativeTherapyContext(text, therapy) {
     const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
-    return new RegExp(`(?:no prior|without prior|never received|not previously treated with|naive to)[^.;,\\n]{0,24}${escaped}`, "i").test(text)
+    return new RegExp(`(?:no(?: prior)?|without(?: prior)?|never received|not previously treated with|naive to)[^.;,\\n]{0,24}${escaped}`, "i").test(text)
       || new RegExp(`${escaped}[- ]naive`, "i").test(text);
   }
 
@@ -738,7 +740,8 @@
       const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
       const before = new RegExp(`\\b(?:considering|planning|planned\\s+(?:for|to\\s+start)?|may\\s+start|might\\s+start|candidate\\s+for|recommended|will\\s+start|to\\s+start)\\s+(?:treatment\\s+with\\s+)?${escaped}\\b`, "i");
       const after = new RegExp(`\\b${escaped}\\s+(?:is\\s+)?(?:planned|being\\s+considered|under\\s+consideration)\\b`, "i");
-      if (before.test(text) || after.test(text)) addTherapy(mentions, therapy);
+      const combination = new RegExp(`\\b(?:considering|planning|may start|will start)\\s+[^.;\\n]{0,80}(?:\\+|and|plus|/)\\s*${escaped}\\b`, 'i');
+      if (before.test(text) || after.test(text) || combination.test(text)) addTherapy(mentions, therapy);
     });
     return mentions;
   }
@@ -913,7 +916,7 @@
   }
 
   function detectBcgAdequacy(text) {
-    if (/adequate bcg|induction plus maintenance|at least 5 of 6 induction|2 of 3 maintenance|two induction courses/i.test(text)) {
+    if (/\badequate bcg|induction plus maintenance|at least 5 of 6 induction|2 of 3 maintenance|two induction courses/i.test(text)) {
       return "adequate";
     }
     if (/inadequate bcg|only \d+ (?:dose|doses)|partial bcg|incomplete bcg/i.test(text)) {
@@ -1061,7 +1064,7 @@
   }
 
   function detectImdcRisk(text) {
-    if (/imdc.{0,12}(intermediate|poor)|intermediate[- ]poor/i.test(text)) {
+    if (/intermediate[- /]poor|intermediate\s+or\s+poor/i.test(text)) {
       return "intermediate_poor";
     }
     if (/imdc.{0,12}favorable|favo[u]?rable risk|good risk metastatic rcc/i.test(text)) {
@@ -1338,6 +1341,7 @@
 
   function detectTreatmentPreferences(text) {
     const preferences = [];
+    text = (text.match(/\b(?:prefers?|seeking|interested in|requests?|wants?)\b[^.;\n]*/gi) || []).join(' ');
 
     if (/radioligand|lutetium|177lu|psma/i.test(text)) addPreference(preferences, "radioligand");
     if (/parp|olaparib|rucaparib|niraparib|talazoparib/i.test(text)) addPreference(preferences, "parp");
@@ -1628,11 +1632,11 @@
     parsed.clinicalAxes.metAlteration = detectMetAlteration(text);
     parsed.clinicalAxes.sarcomatoid = detectSarcomatoid(text);
 
-    if (/hereditary|von hippel|vhl[- ]associated|hereditary rcc/i.test(text) || parsed.clinicalAxes.vhlStatus) {
+    if (/hereditary|von hippel|vhl[- ]associated|hereditary rcc/i.test(text)) {
       parsed.diseaseGroup = "hereditary";
       parsed.diseaseLabel = "Hereditary RCC";
       pushDiseaseIds(parsed.diseaseSettingIds, ["hereditary_rcc"]);
-    } else if (/adjuvant|post[- ]nephrectomy|after nephrectomy|m1 ned|disease[- ]free after nephrectomy|resected high[- ]risk/i.test(text)) {
+    } else if (/adjuvant|m1 ned|disease[- ]free after nephrectomy|resected high[- ]risk/i.test(text) || (/post[- ]nephrectomy|after nephrectomy/i.test(text) && !/metastatic|metastases|stage iv/i.test(text))) {
       parsed.diseaseGroup = "adjuvant";
       parsed.diseaseLabel = "Adjuvant RCC";
       pushDiseaseIds(parsed.diseaseSettingIds, ["adjuvant_post_nephrectomy"]);
@@ -1975,7 +1979,7 @@
       addTherapy(history.receivedTherapies, "docetaxel");
     }
 
-    if (parsed.cancerType === "Prostate" && /\badt\b|androgen deprivation|lhrh|gnrh|leuprolide|goserelin|degarelix|relugolix/i.test(text)) {
+    if (parsed.cancerType === "Prostate" && /\badt\b|androgen deprivation|lhrh|gnrh|leuprolide|goserelin|degarelix|relugolix/i.test(text) && !hasExplicitNegativeTherapyContext(text, "adt") && !/\b(?:no|without)\s+(?:prior\s+)?(?:adt|androgen deprivation)/i.test(text)) {
       addTherapy(history.receivedTherapies, "adt");
     }
   }
@@ -2120,6 +2124,7 @@
   function buildCandidateFacts(parsed, text, assertionText) {
     const facts = [];
     const add = options => {
+      if (!options.sourceSpan?.text || options.sourceSpan.end <= options.sourceSpan.start) return;
       const fact = makeCandidateFact(options);
       if (!facts.some(existing => existing.factId === fact.factId)) facts.push(fact);
     };
@@ -2186,6 +2191,18 @@
         temporality: { eventTime: eventTimeNearSpan(text, sourceSpan), relativeTo: "screening" }
       });
     });
+    // Retain separate explicit occurrences, including denials, so a global
+    // negation cannot erase a conflicting statement about the same drug.
+    EXPLICIT_THERAPIES.forEach(therapy => {
+      const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/_/g, '[ _-]?');
+      const pattern = new RegExp(`\\b(?:no(?: prior)?|never received|received|previously received|prior|treated with)\\s+${escaped}\\b`, 'gi');
+      for (const match of assertionText.matchAll(pattern)) {
+        const sourceSpan = { start: match.index, end: match.index + match[0].length, text: text.slice(match.index, match.index + match[0].length) };
+        add({ concept: 'treatment_exposure', display: 'Treatment exposure', predicate: 'received', value: therapy,
+          assertion: /^(?:no|never)/i.test(match[0]) ? 'absent' : 'present', status: 'historical', sourceSpan,
+          temporality: { eventTime: eventTimeNearSpan(text, sourceSpan), relativeTo: 'screening' } });
+      }
+    });
     (parsed.therapyHistory?.progressedOnTherapies || []).forEach(therapy => {
       const escaped = therapy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/_/g, "[ _-]?");
       const sourceSpan = findSourceSpan(text, [new RegExp(`progress(?:ed|ion)? (?:on|after|following)[^.;]{0,20}${escaped}`, "i")], assertionText);
@@ -2224,7 +2241,14 @@
     Object.entries(parsed.screeningFacts || {}).forEach(([field, value]) => {
       if (field === "laboratoryResults") return;
       if (!value) return;
-      add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, sourceSpan: findSourceSpan(text, screeningMap[field] || [], assertionText) });
+      const sourceSpan = findSourceSpan(text, screeningMap[field] || [], assertionText);
+      if (field === 'ecogStatus') {
+        const exact = sourceSpan.text.match(/^(?:ecog|performance status|ps)\s*(?:of\s*)?([0-4])$/i);
+        if (!exact) return;
+        add({ concept: field, display: 'ECOG performance status', predicate: 'has', value: Number(exact[1]), sourceSpan, observedAt: eventTimeNearSpan(text, sourceSpan) });
+      } else {
+        add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, sourceSpan });
+      }
     });
 
     (parsed.screeningFacts?.laboratoryResults || []).forEach(result => {
@@ -2248,7 +2272,7 @@
     };
     Object.entries(parsed.temporalFacts || {}).forEach(([field, value]) => {
       if (!Number.isFinite(value)) return;
-      add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, sourceSpan: findSourceSpan(text, temporalMap[field] || [], assertionText), temporality: { eventTime: null, relativeTo: "screening", daysBefore: value } });
+      add({ concept: field, display: field.replace(/([a-z])([A-Z])/g, "$1 $2"), predicate: "has", value, validAt: new Date().toISOString(), sourceSpan: findSourceSpan(text, temporalMap[field] || [], assertionText), temporality: { eventTime: null, relativeTo: "screening", daysBefore: value } });
     });
 
     return facts;
@@ -2394,14 +2418,15 @@
     if (originalConcepts.has("cancer_type")) {
       const cancerMap = { prostate: "Prostate", bladder: "Bladder", bladder_urothelial: "Bladder", kidney: "Kidney", kidney_rcc: "Kidney", testicular: "Testicular", testicular_gct: "Testicular" };
       const reviewedCancer = cancerMap[token(cancerFact?.value)] || "";
-      if (!reviewedCancer) {
+      const cancerDecisionMade = facts.some(fact => token(fact?.concept?.code) === 'cancer_type' && token(fact.confirmation) !== 'unreviewed');
+      if (!reviewedCancer && cancerDecisionMade) {
         next.supported = false;
         next.unsupportedReason = "The patient's own supported cancer diagnosis was rejected or remains uncertain.";
         next.cancerType = "";
         next.diseaseGroup = "";
         next.diseaseLabel = "";
         next.diseaseSettingIds = [];
-      } else if (reviewedCancer !== parsed.cancerType) {
+      } else if (reviewedCancer && reviewedCancer !== parsed.cancerType) {
         next.cancerType = reviewedCancer;
         next.diseaseGroup = "";
         next.diseaseLabel = "";
@@ -2411,11 +2436,12 @@
 
     const diseaseFact = lastFact(definite.filter(fact => ["present", "positive"].includes(token(fact.assertion))), "disease_context", "has_diagnosis");
     if (originalConcepts.has("disease_context")) {
-      if (!diseaseFact) {
+      const diseaseDecisionMade = facts.some(fact => token(fact?.concept?.code) === 'disease_context' && token(fact.confirmation) !== 'unreviewed');
+      if (!diseaseFact && diseaseDecisionMade) {
         next.diseaseGroup = "";
         next.diseaseLabel = "";
         next.diseaseSettingIds = [];
-      } else if (token(diseaseFact.value) !== token(parsed.diseaseGroup || parsed.diseaseLabel)) {
+      } else if (diseaseFact && token(diseaseFact.value) !== token(parsed.diseaseGroup || parsed.diseaseLabel)) {
         next.diseaseGroup = String(diseaseFact.value || "");
         next.diseaseLabel = String(diseaseFact.value || "").replace(/_/g, " ");
         // A manual free-text correction cannot safely inherit IDs derived from
@@ -2475,9 +2501,9 @@
     }
 
     const semanticallyChanged = facts.some(fact => token(fact.confirmation) === "corrected" || token(fact.confirmation) === "rejected");
-    const changedDiseaseLogic = semanticallyChanged && facts.some(fact => {
+    const changedDiseaseLogic = facts.some(fact => {
       const concept = token(fact?.concept?.code || fact?.conceptId);
-      return concept === "cancer_type" || concept === "disease_context" || Object.keys(createClinicalAxes()).some(axis => token(axis) === concept);
+      return ["corrected", "rejected"].includes(token(fact.confirmation)) && (concept === "cancer_type" || concept === "disease_context" || Object.keys(createClinicalAxes()).some(axis => token(axis) === concept));
     });
     if (changedDiseaseLogic) {
       next.diseaseSettingIds = [];
@@ -2495,7 +2521,7 @@
   }
 
   function parse(query) {
-    const rawQuery = normalizeWhitespace(query);
+    const rawQuery = String(query || '');
     const parsed = {
       rawQuery,
       supported: false,

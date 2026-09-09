@@ -14,6 +14,7 @@ if str(PIPELINE) not in sys.path:
     sys.path.insert(0, str(PIPELINE))
 
 from apply_curator_review import ReviewValidationError, validate_and_apply  # noqa: E402
+from clinical_schema import source_content_hash
 
 
 def fixture() -> tuple[dict, dict]:
@@ -70,6 +71,10 @@ def fixture() -> tuple[dict, dict]:
             "rationale": "The registry describes one enrollment pathway.",
         }],
     }
+    source_hash = source_content_hash(catalog["trials"][0])
+    catalog["trials"][0]["rawRecordHash"] = source_hash
+    catalog["trials"][0]["sourceContentHash"] = source_hash
+    review["trialRawRecordHash"] = source_hash
     return catalog, review
 
 

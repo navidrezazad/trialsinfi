@@ -958,6 +958,7 @@ function cts_normalize_trial_shape($trial): array
         'registryVersion' => trim((string)($trial['registryVersion'] ?? '')),
         'retrievedAt' => trim((string)($trial['retrievedAt'] ?? '')),
         'rawRecordHash' => trim((string)($trial['rawRecordHash'] ?? '')),
+        'sourceContentHash' => trim((string)($trial['sourceContentHash'] ?? '')),
         'nctId' => trim((string)($trial['nctId'] ?? '')),
         'title' => trim((string)($trial['title'] ?? '')),
         'status' => $normalizedStatus ?? 'not_specified',

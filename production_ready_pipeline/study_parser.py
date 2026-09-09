@@ -191,7 +191,7 @@ def parse_study_extended(
             "NCT ID": nct_id,
             "Trial title": title,
             "Phase": phase,
-            "Status": overall_status,
+            "Status": location.get("status", "UNKNOWN"),
             "Cancer type": cancer_type_str,
             "Institution": institution,
             "PI name": pi_name,

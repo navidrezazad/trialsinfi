@@ -151,17 +151,18 @@ function testSafeResultSemantics() {
     exclusionCriteria: 'No systemic anti-cancer therapy within 28 days before enrollment.'
   });
   const tooSoon = matchOne('mCRPC after enzalutamide. ECOG 1. Last systemic therapy 21 days ago.', washoutTrial);
-  assert.ok(tooSoon.potentialConflicts.includes('washout_window'));
+  assert.ok(tooSoon.legacyHints.conflicts.includes('washout_window'));
+  assert.equal(tooSoon.potentialConflicts.length, 0, 'Legacy hints cannot determine criterion truth.');
   assert.equal(tooSoon.hardExcluded, false, 'Unreviewed regex evidence cannot hard-exclude.');
 
   const sufficient = matchOne('mCRPC after enzalutamide. ECOG 1. Last systemic therapy 35 days ago.', washoutTrial);
   assert.equal(sufficient.potentialConflicts.includes('washout_window'), false);
-  assert.ok(sufficient.resolvedFacts.some(value => value.includes('protocol requires 28d')));
+  assert.equal(sufficient.resolvedFacts.length, 0, 'Legacy regex evidence must not claim a resolved protocol criterion.');
 
   const labs = matchOne('mCRPC after enzalutamide. Labs normal. Adequate organ function.', trial({
     inclusionCriteria: 'ANC >= 1500/mm3, platelets >= 100000/mm3, and hemoglobin >= 9 g/dL.'
   }));
-  assert.ok(labs.flags.some(flag => flag.code === 'lab_organ_function'));
+  assert.equal(labs.evaluations.some(evaluation => evaluation.status === 'SATISFIED'), false);
 
   const allComerHer2 = matchOne('Metastatic urothelial carcinoma. HER2 negative.', trial({
     cancerType: 'Bladder',
@@ -214,7 +215,7 @@ function testReviewedHardExclusionGate() {
   const result = Matcher.matchTrials({ trials: [reviewedTrial], parsedQuery: parsed });
   const match = result.evaluatedCohorts[0].match;
   assert.equal(match.reviewTier, 'MODELED_CONFLICT');
-  assert.equal(match.hardExcluded, true);
+  assert.equal(match.hardExcluded, false, 'Automated exclusion is disabled pending independent clinical validation.');
   assert.equal(result.modeledConflicts.length, 1, 'Hard conflicts remain visible for audit.');
 
   reviewedCriterion.reviewStatus = 'unreviewed';
@@ -227,6 +228,7 @@ function testReviewedHardExclusionGate() {
     predicate: 'has',
     value: 9.5,
     unit: 'g/dL',
+    observedAt: new Date().toISOString(),
     assertion: 'present',
     confirmation: 'confirmed',
     sourceText: 'hemoglobin 9.5 g/dL'
@@ -290,8 +292,9 @@ function testReviewedHardExclusionGate() {
     sites: [{ ...freshSite, locationStatus: 'active_not_recruiting' }]
   };
   assert.equal(Schema.calculateTrialDataQuality(qualityCohort, reviewedTrial).currentLocalCohort, false, 'Active-not-recruiting is not current enrollment evidence.');
-  qualityCohort.sites = [{ ...freshSite, locationStatus: 'recruiting' }];
-  assert.equal(Schema.calculateTrialDataQuality(qualityCohort, reviewedTrial).currentLocalCohort, true);
+  qualityCohort.sites = [{ ...freshSite, locationStatus: 'recruiting', cohortIds: [qualityCohort.cohortId] }];
+  assert.equal(Schema.calculateTrialDataQuality(qualityCohort, reviewedTrial, { trialSourceIsCurrent: true }).currentLocalCohort, true);
+  assert.equal(Schema.calculateTrialDataQuality(qualityCohort, reviewedTrial, { trialSourceIsCurrent: false }).currentLocalCohort, false);
 }
 
 function testContractsAndRetrieval() {

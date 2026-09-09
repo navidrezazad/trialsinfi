@@ -42,9 +42,9 @@ def main() -> None:
     assert _recognized_predicate("Chemotherapy within 4 weeks or 5 half-lives, whichever is shorter.") == (None, None)
 
     surgery, _ = _recognized_predicate("Major surgery within 30 days.")
-    assert surgery and surgery["concept"] == "sinceLastSurgeryDays" and surgery["value"] == 30
+    assert surgery is None, 'Unanchored events must not be converted into an elapsed-time requirement.'
     therapy, _ = _recognized_predicate("Anticancer therapy within 4 weeks.")
-    assert therapy and therapy["concept"] == "sinceLastSystemicTherapyDays" and therapy["value"] == 28
+    assert therapy is None, 'Positive exposure windows are not washout requirements.'
 
     criteria = extract_criteria(
         nct_id="NCT-SCHEMA",
@@ -70,8 +70,7 @@ def main() -> None:
         sex="",
         registry_version="2026-08-02T00:00:00Z",
     )
-    assert segmented[0]["modeledStatus"] == "modeled"
-    assert all(item["predicate"]["op"] == "NOT_MODELED" for item in segmented[1:])
+    assert all(item["predicate"]["op"] == "NOT_MODELED" for item in segmented), 'Partly parsed source blocks must abstain as a whole.'
 
     print("Clinical schema safety tests passed.")
 

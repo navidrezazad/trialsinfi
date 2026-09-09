@@ -13,9 +13,9 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
-    from .clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria
+    from .clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria, source_content_hash
 except ImportError:
-    from production_ready_pipeline.clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria
+    from production_ready_pipeline.clinical_schema import SCHEMA_VERSION, build_cohorts, build_trial_provenance, extract_criteria, source_content_hash
 
 
 def _collapse_whitespace(value: str) -> str:
@@ -359,6 +359,9 @@ def build_website_catalog(
             "sourceRun": run_ts,
             "sourceRunDir": source_run_dir,
         })
+
+    for trial in trials:
+        trial["sourceContentHash"] = source_content_hash(trial)
 
     return {
         "metadata": {

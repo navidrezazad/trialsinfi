@@ -195,7 +195,8 @@ class ClinicalTrialsApp {
       <div>
         <strong>${Utils.sanitizeHTML(evaluation.status || 'UNKNOWN')}</strong>
         — ${Utils.sanitizeHTML(evaluation.reason || evaluation.question || 'Review required')}
-        ${evaluation.criterion?.sourceSpan?.text ? `<br><span class="patient-source-span">Protocol: “${Utils.sanitizeHTML(Utils.truncateText(evaluation.criterion.sourceSpan.text, 180))}”</span>` : ''}
+        ${evaluation.question ? `<br><strong>Next question:</strong> ${Utils.sanitizeHTML(evaluation.question)}` : ''}
+        ${evaluation.criterion?.sourceSpan?.text ? `<br><span class="patient-source-span">Protocol: “${Utils.sanitizeHTML(evaluation.criterion.sourceSpan.text)}”</span>` : ''}
       </div>
     `;
     const criteriaHTML = evaluations.length
@@ -499,12 +500,13 @@ class ClinicalTrialsApp {
     return false;
   }
 
-  runPatientSearch(rawQuery, options = {}) {
-    const query = (rawQuery || '').toString().trim();
+  async runPatientSearch(rawQuery, options = {}) {
+    const requestId = this.patientSearchRequestId = (this.patientSearchRequestId || 0) + 1;
+    const query = (rawQuery || '').toString();
     const status = document.getElementById('patientSearchStatus');
     const noResultsText = document.querySelector('#noResults p');
 
-    if (!query) {
+    if (!query.trim()) {
       this.clearPatientSearch();
       if (status) {
         status.textContent = 'Enter a de-identified patient description, then review the extracted facts.';
@@ -512,7 +514,7 @@ class ClinicalTrialsApp {
       return false;
     }
 
-    if (!window.PatientQueryParser || !window.PatientTrialMatcher) {
+    if (!window.PatientQueryParser || !window.PrescreenSearchService) {
       this.patientSearchState = {
         active: false,
         rawQuery: query,
@@ -570,27 +572,24 @@ class ClinicalTrialsApp {
       };
       this.renderPatientQueryChips(parsedQuery);
       this.renderPatientFactReview(parsedQuery);
-      if (status) {
-        status.textContent = 'Review every extracted fact before matching. Unconfirmed or missing information will remain explicitly unknown.';
+      if ((parsedQuery.directIdentifierWarnings || []).length) {
+        if (status) status.textContent = 'Remove possible direct identifiers before searching.';
+        this.updateTrialsDisplay();
+        return false;
       }
-      this.updateCatalogMeta();
-      this.updateTrialsDisplay();
-      return true;
     }
 
-    const matches = window.PatientTrialMatcher?.matchTrials({
+    let matches;
+    try {
+      matches = await window.PrescreenSearchService.search({
       trials: this.trialManager.getAllTrials(),
       parsedQuery
-    }) || {
-      parsedQuery,
-      priorityReview: [],
-      potentiallyRelevant: [],
-      manualReview: [],
-      modeledConflicts: [],
-      diseaseContextOnly: [],
-      evaluatedCohorts: [],
-      auditTrail: []
-    };
+      });
+    } catch (error) {
+      if (requestId === this.patientSearchRequestId && status) status.textContent = 'Search could not complete. Please retry; no eligibility decision was made.';
+      return false;
+    }
+    if (requestId !== this.patientSearchRequestId) return false;
 
     this.patientSearchState = {
       active: true,
@@ -608,7 +607,7 @@ class ClinicalTrialsApp {
 
     if (status) {
       const cancerLabel = parsedQuery?.cancerType ? `${parsedQuery.cancerType.toLowerCase()} matching` : 'patient matching';
-      status.textContent = `${cancerLabel.charAt(0).toUpperCase()}${cancerLabel.slice(1)} is active. Results support protocol review and are not final eligibility determinations.`;
+      status.textContent = `${cancerLabel.charAt(0).toUpperCase()}${cancerLabel.slice(1)} is active. ${options.confirmed ? 'Reviewed facts are applied.' : 'Provisional discovery: extracted facts are not yet confirmed.'} Missing or unreviewed facts stay unknown. Results are not final eligibility determinations.`;
     }
 
     this.renderPatientQueryChips(parsedQuery);
@@ -736,7 +735,6 @@ class ClinicalTrialsApp {
       const select = document.querySelector(`[data-patient-fact-decision="${CSS.escape(fact.factId)}"]`);
       const input = document.querySelector(`[data-patient-fact-value="${CSS.escape(fact.factId)}"]`);
       const confirmation = select?.value || 'unreviewed';
-      if (confirmation === 'unreviewed') hasUnreviewed = true;
       let value = input?.value ?? fact.value;
       if (typeof fact.value === 'number' && value !== '') {
         value = Number(value);
@@ -766,21 +764,16 @@ class ClinicalTrialsApp {
       };
     });
     if (hasUnreviewed) {
-      if (status) status.textContent = 'Confirm, correct, or reject every extracted fact and use valid numeric values before matching.';
+      if (status) status.textContent = 'Use valid numeric values for reviewed facts before matching.';
       return false;
     }
 
     const patientFactSet = window.PatientQueryParser.applyFactDecisions(parsedQuery, decisions);
-    if ((patientFactSet.contradictions || []).length > 0) {
-      if (status) status.textContent = 'Resolve contradictory facts by rejecting or correcting one assertion before matching.';
-      return false;
-    }
     const reviewedQuery = window.PatientQueryParser.reconcileReviewedFacts
       ? window.PatientQueryParser.reconcileReviewedFacts(parsedQuery, patientFactSet)
       : { ...parsedQuery, patientFactSet };
     this.patientSearchState.parsedQuery = reviewedQuery;
     this.patientSearchState.patientFactSet = patientFactSet;
-    this.hidePatientFactReview();
     return this.runPatientSearch(this.patientSearchState.rawQuery, {
       confirmed: true,
       parsedQuery: reviewedQuery,
@@ -790,6 +783,7 @@ class ClinicalTrialsApp {
   }
 
   clearPatientSearch() {
+    this.patientSearchRequestId = (this.patientSearchRequestId || 0) + 1;
     const input = document.getElementById('patientQueryInput');
     const status = document.getElementById('patientSearchStatus');
     const chips = document.getElementById('patientQueryChips');

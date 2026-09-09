@@ -36,6 +36,14 @@
     return ["recruiting", "active_not_recruiting", "not_yet_recruiting", "not_specified", "unknown", ""].includes(normalize(trial?.status).replace(/ /g, "_"));
   }
 
+  function plausibleDisease(trial, cancerType) {
+    if (sameCancer(trial, cancerType)) return true;
+    const text = trialText(trial);
+    if (/tissue[- ]agnostic|basket|advanced solid tumou?rs|metastatic solid tumou?rs|all solid tumou?rs/i.test(text)) return true;
+    const patterns = { Prostate: /prostat/i, Bladder: /bladder|urothelial/i, Kidney: /renal cell|kidney cancer/i, Testicular: /testicular|germ cell/i };
+    return Boolean(patterns[cancerType]?.test(text));
+  }
+
   function buildBm25Index(trials) {
     const documents = (Array.isArray(trials) ? trials : []).map(trial => {
       const terms = tokenize(trialText(trial));
@@ -74,7 +82,7 @@
   function structuredCandidates(trials, parsedQuery) {
     const requestedIds = new Set(parsedQuery?.diseaseSettingIds || []);
     return (Array.isArray(trials) ? trials : [])
-      .filter(trial => sameCancer(trial, parsedQuery?.cancerType) && isOpenOrUncertain(trial))
+      .filter(trial => plausibleDisease(trial, parsedQuery?.cancerType) && isOpenOrUncertain(trial))
       .map(trial => {
         const trialIds = new Set(trial?.diseaseSettingAllIds || []);
         const overlap = requestedIds.size > 0 && Array.from(requestedIds).some(id => trialIds.has(id));
@@ -123,13 +131,9 @@
     const parsedQuery = options?.parsedQuery || {};
     const sameCancerSet = structuredCandidates(trials, parsedQuery).map(item => ({ ...item, method: item.reason }));
 
-    // Exhaustive same-cancer evaluation is the default while this catalog remains small.
-    if (sameCancerSet.length <= Number(options?.exhaustiveThreshold || 500)) {
-      return unionCandidates([sameCancerSet]);
-    }
-
     const queryText = options?.queryText || parsedQuery?.deidentifiedQuery || parsedQuery?.rawQuery || "";
-    const lexical = bm25Search(buildBm25Index(trials.filter(trial => sameCancer(trial, parsedQuery?.cancerType))), queryText, options?.lexicalLimit || DEFAULT_K)
+    const eligible = trials.filter(trial => plausibleDisease(trial, parsedQuery?.cancerType) && isOpenOrUncertain(trial));
+    const lexical = bm25Search(buildBm25Index(eligible), queryText, eligible.length || DEFAULT_K)
       .map(item => ({ ...item, method: "bm25" }));
     let dense = [];
     if (typeof options?.denseProvider === "function") {
@@ -142,7 +146,8 @@
       });
       dense = (Array.isArray(proposed) ? proposed : []).map(item => ({ ...item, method: "dense" }));
     }
-    return unionCandidates([sameCancerSet, lexical, dense]);
+    const ids = new Set(eligible.map(trial => trial.nctId || trial.id));
+    return unionCandidates([sameCancerSet, lexical, dense]).filter(item => ids.has(item.trial.nctId || item.trial.id));
   }
 
   const api = { tokenize, trialText, sameCancer, isOpenOrUncertain, buildBm25Index, bm25Search, structuredCandidates, unionCandidates, structuredPatientQuery, retrieve };

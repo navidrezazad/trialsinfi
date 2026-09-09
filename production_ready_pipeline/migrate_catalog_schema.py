@@ -16,6 +16,7 @@ try:
         canonical_axis_value,
         extract_criteria,
         stable_hash,
+        source_content_hash,
     )
     from .nccn_classifier import classify_trial
 except ImportError:
@@ -25,6 +26,7 @@ except ImportError:
         canonical_axis_value,
         extract_criteria,
         stable_hash,
+        source_content_hash,
     )
     from nccn_classifier import classify_trial  # type: ignore
 
@@ -116,9 +118,10 @@ def migrate_trial(trial: dict[str, Any], metadata: dict[str, Any], generated_at:
     nct_id = _text(trial.get("nctId") or trial.get("id") or "UNKNOWN")
     registry_version = _text(
         trial.get("lastSyncAt")
+        or trial.get("registryVersion")
         or metadata.get("lastSyncAt")
         or trial.get("lastUpdatePosted")
-        or generated_at
+        or "unknown"
     )
     classifier_cancer_type = CANCER_TYPE_MAP.get(_text(trial.get("cancerType")), _text(trial.get("cancerType")))
     classification = classify_trial(
@@ -136,10 +139,9 @@ def migrate_trial(trial: dict[str, Any], metadata: dict[str, Any], generated_at:
     migrated["registry"] = "ClinicalTrials.gov"
     migrated["registryVersion"] = registry_version
     migrated["retrievedAt"] = registry_version
-    # Preserve the registry-source hash on repeat migrations. Re-hashing a
-    # previously enriched catalog row would make human reviews appear stale even
-    # though the underlying registry record did not change.
-    migrated["rawRecordHash"] = _text(trial.get("rawRecordHash")) or stable_hash(original)
+    # Recompute source identity rather than trusting a cached hash.
+    migrated["rawRecordHash"] = source_content_hash(trial)
+    migrated["sourceContentHash"] = migrated["rawRecordHash"]
     migrated["diseaseSettingPrimary"] = classification.disease_setting_primary
     migrated["diseaseSettingPrimaryId"] = classification.disease_setting_primary_id
     migrated["diseaseSettingAll"] = classification.disease_setting_all
@@ -162,6 +164,8 @@ def migrate_trial(trial: dict[str, Any], metadata: dict[str, Any], generated_at:
 
     sites = _site_records(trial, generated_at)
     migrated["sites"] = sites
+    migrated["rawRecordHash"] = source_content_hash(migrated)
+    migrated["sourceContentHash"] = migrated["rawRecordHash"]
     migrated["siteCount"] = len(sites)
     criteria = extract_criteria(
         nct_id=nct_id,
@@ -173,7 +177,7 @@ def migrate_trial(trial: dict[str, Any], metadata: dict[str, Any], generated_at:
         registry_version=registry_version,
     )
     prior_registry_version = _text(trial.get("registryVersion"))
-    review_still_current = bool(trial.get("rawRecordHash")) and prior_registry_version == registry_version
+    review_still_current = trial.get("sourceContentHash") == source_content_hash(trial) and prior_registry_version == registry_version
     if review_still_current:
         prior_criteria = {
             item.get("criterionId"): item
@@ -214,8 +218,13 @@ def migrate_trial(trial: dict[str, Any], metadata: dict[str, Any], generated_at:
                         break
                     cohort[key] = [copy.deepcopy(criteria_by_id[criterion_id]) for criterion_id in reviewed_ids]
                 cohort["schemaVersion"] = SCHEMA_VERSION
-                cohort["enrollmentStatus"] = _text(trial.get("status") or "unknown")
+                # Cohort closure is independent of the parent trial status.
                 cohort["sites"] = sites
+            for cohort in reviewed_cohorts:
+                assigned_ids = {item.get("criterionId") for key in ("sharedCriteria", "cohortSpecificCriteria") for item in cohort.get(key) or []}
+                assigned_ids.update(cohort.get("inapplicableCriterionIds") or [])
+                if assigned_ids != set(criteria_by_id):
+                    valid_review = False
             if valid_review:
                 cohorts = reviewed_cohorts
     migrated["cohorts"] = cohorts

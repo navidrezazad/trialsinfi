@@ -32,6 +32,9 @@ def compare_catalogs(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
         left = before["trials"][trial_id]
         right = after["trials"][trial_id]
         changes = []
+        for field in ("inclusionCriteria", "exclusionCriteria", "eligibilityCriteria", "title", "conditions", "interventions", "minimumAge", "maximumAge", "sex"):
+            if stable_hash(left.get(field)) != stable_hash(right.get(field)):
+                changes.append({"field": field, "beforeHash": stable_hash(left.get(field)), "afterHash": stable_hash(right.get(field))})
         if left.get("status") != right.get("status"):
             changes.append({"field": "status", "before": left.get("status"), "after": right.get("status")})
         if stable_hash(left.get("criteria") or []) != stable_hash(right.get("criteria") or []):
@@ -75,7 +78,7 @@ def main() -> int:
     print(json.dumps(report, indent=2))
     if args.fail_on_removed and report["summary"]["removed"]:
         return 1
-    if args.fail_on_unreviewed_change and (report["summary"]["criteriaChanges"] or report["summary"]["cohortChanges"]):
+    if args.fail_on_unreviewed_change and report["summary"]["changed"]:
         return 1
     return 0
 

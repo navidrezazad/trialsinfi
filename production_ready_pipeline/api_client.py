@@ -48,16 +48,22 @@ class ClinicalTrialsGovClient:
         studies: list[dict] = []
         next_page_token: str | None = None
         page_number = 0
+        seen_tokens: set[str] = set()
 
         while True:
             if next_page_token:
                 params["pageToken"] = next_page_token
             data = self._get(self.api_config.base_url, params=params)
+            if not isinstance(data.get("studies"), list):
+                raise ValueError("Registry response is missing the studies array")
             studies.extend(data.get("studies", []))
             next_page_token = data.get("nextPageToken")
             page_number += 1
             if not next_page_token:
                 break
+            if next_page_token in seen_tokens:
+                raise ValueError("Registry pagination repeated a page token; acquisition is incomplete")
+            seen_tokens.add(next_page_token)
             if max_pages is not None and page_number >= max_pages:
                 break
             time.sleep(self.api_config.polite_sleep_seconds)
@@ -65,6 +71,8 @@ class ClinicalTrialsGovClient:
         return studies
 
     def fetch_all(self, conditions: list[str]) -> list[dict]:
+        if not conditions:
+            raise ValueError("At least one registry query is required")
         seen_ncts: set[str] = set()
         all_studies: list[dict] = []
         lock = threading.Lock()
@@ -97,7 +105,11 @@ class ClinicalTrialsGovClient:
             return condition, added
 
         with ThreadPoolExecutor(max_workers=self.api_config.max_workers) as pool:
-            list(pool.map(worker, conditions))
+            results = list(pool.map(worker, conditions))
+        self.last_acquisition_manifest = {"queries": [{"condition": condition, "completed": count >= 0, "added": max(count, 0)} for condition, count in results]}
+        failures = [condition for condition, count in results if count < 0]
+        if failures:
+            raise RuntimeError(f"Incomplete registry acquisition; retain previous catalog. Failed conditions: {failures}")
 
         return [
             study for study in all_studies

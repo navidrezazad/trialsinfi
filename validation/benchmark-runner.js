@@ -46,16 +46,22 @@
     return new Set((testCase.goldCohorts || []).filter(item => Number(item.relevance || 0) > 0).map(item => item.cohortId));
   }
 
+  function ranking(testCase) {
+    const ids = testCase.rankedCohortIds || [];
+    if (ids.length !== new Set(ids).size) throw new Error('Duplicate ranked cohort IDs are invalid');
+    return ids;
+  }
+
   function recallAtK(testCase, k) {
     const relevant = relevantIds(testCase);
     if (!relevant.size) return null;
-    const retrieved = new Set((testCase.rankedCohortIds || []).slice(0, k));
+    const retrieved = new Set(ranking(testCase).slice(0, k));
     return Array.from(relevant).filter(id => retrieved.has(id)).length / relevant.size;
   }
 
   function precisionAtK(testCase, k) {
-    const ranked = (testCase.rankedCohortIds || []).slice(0, k);
-    if (!ranked.length) return null;
+    const ranked = ranking(testCase).slice(0, k);
+    if (!ranked.length) return relevantIds(testCase).size ? 0 : null;
     const relevant = relevantIds(testCase);
     return ranked.filter(id => relevant.has(id)).length / ranked.length;
   }
@@ -66,7 +72,7 @@
 
   function ndcgAtK(testCase, k) {
     const relevance = new Map((testCase.goldCohorts || []).map(item => [item.cohortId, Number(item.relevance || 0)]));
-    const actual = (testCase.rankedCohortIds || []).slice(0, k).map(id => relevance.get(id) || 0);
+    const actual = ranking(testCase).slice(0, k).map(id => relevance.get(id) || 0);
     const ideal = Array.from(relevance.values()).sort((a, b) => b - a).slice(0, k);
     const idealScore = dcg(ideal);
     return idealScore ? dcg(actual) / idealScore : null;
@@ -74,17 +80,17 @@
 
   function reciprocalRank(testCase) {
     const relevant = relevantIds(testCase);
-    const index = (testCase.rankedCohortIds || []).findIndex(id => relevant.has(id));
+    const index = ranking(testCase).findIndex(id => relevant.has(id));
     return index >= 0 ? 1 / (index + 1) : 0;
   }
 
   function numberNeededToReviewAtK(testCase, k) {
-    const ranked = (testCase.rankedCohortIds || []).slice(0, k);
+    const ranked = ranking(testCase).slice(0, k);
     const relevant = relevantIds(testCase);
     if (!relevant.size) return null;
     const found = ranked.filter(id => relevant.has(id)).length;
     // k+1 is a conservative censored value when no relevant cohort is found.
-    return found ? ranked.length / found : ranked.length + 1;
+    return found ? ranked.length / found : k + 1;
   }
 
   function normalizeCriterionState(row, field) {
@@ -115,7 +121,7 @@
       precision,
       sensitivity,
       specificity: safeDivide(tn, tn + fp),
-      f1: precision == null || sensitivity == null || precision + sensitivity === 0 ? null : (2 * precision * sensitivity) / (precision + sensitivity)
+      f1: safeDivide(2 * tp, 2 * tp + fp + fn)
     };
   }
 
@@ -136,6 +142,20 @@
 
   function evaluateBenchmark(benchmark) {
     const cases = benchmark?.cases || [];
+    const caseIds = new Set();
+    for (const item of cases) {
+      if (!item.caseId || caseIds.has(item.caseId)) throw new Error('Case IDs must be present and unique');
+      caseIds.add(item.caseId);
+      ranking(item);
+      for (const field of ['goldCohorts', 'candidateCohortIds', 'rankedCohortIds', 'criteria']) {
+        if (!Array.isArray(item[field])) throw new Error(`Missing output manifest: ${field}`);
+      }
+      const goldIds = item.goldCohorts.map(row => row.cohortId);
+      if (new Set(goldIds).size !== goldIds.length) throw new Error('Duplicate gold cohort IDs');
+      if (item.rankedCohortIds.some(id => !item.candidateCohortIds.includes(id))) throw new Error('Ranking contains a non-candidate cohort');
+      const criterionIds = item.criteria.map(row => `${row.cohortId}|${row.criterionId}`);
+      if (new Set(criterionIds).size !== criterionIds.length) throw new Error('Duplicate criterion rows');
+    }
     const ks = [5, 10, 20, 50];
     const retrieval = {};
     ks.forEach(k => {
@@ -190,7 +210,7 @@
     const nonSatisfied = criterionRows.filter(row => row.goldState !== "SATISFIED");
     const criticalFalseSatisfactionRate = safeDivide(nonSatisfied.filter(row => row.critical === true && row.predictedState === "SATISFIED").length, nonSatisfied.filter(row => row.critical === true).length);
     const unsafeHard = criterionRows.filter(row => row.hardExcluded === true && row.hardExclusionGold !== true);
-    const hardExclusionOpportunities = criterionRows.filter(row => row.hardExcluded === true || row.hardExclusionGold === true);
+    const hardExclusionOpportunities = criterionRows.filter(row => row.hardExcluded === true);
     const unsafeHardExclusionRate = safeDivide(unsafeHard.length, hardExclusionOpportunities.length);
     const unsafeHard95 = wilsonInterval(unsafeHard.length, hardExclusionOpportunities.length);
 
@@ -222,6 +242,8 @@
       benchmarkVersion: benchmark?.benchmarkVersion || "unversioned",
       trialSnapshot: benchmark?.trialSnapshot || null,
       caseCount: cases.length,
+      inferenceNote: 'Wilson intervals assume independent opportunities. Release decisions require a prespecified case-cluster analysis and clinically approved thresholds.',
+      validationManifest: benchmark.validationManifest || null,
       retrieval,
       criteria: {
         count: criterionRows.length,
@@ -285,6 +307,14 @@
     check("sentinel failures", metrics.workflow.sentinelFailures, thresholds.sentinelFailures, "max");
     check("registry ingestion hours", metrics.workflow.maximumRegistryIngestionHours, thresholds.maximumRegistryIngestionHours, "max");
     const failed = checks.filter(item => !item.passed);
+    const manifest = metrics.validationManifest;
+    if (!manifest?.locked || !manifest?.independentReview || !manifest?.clinicalApprovalId || !manifest?.clusterAnalysisArtifact || !Array.isArray(manifest.requiredSubgroups) || !manifest.requiredSubgroups.length) {
+      failed.push({ name: 'Independent locked validation manifest and clustered analysis', evaluable: false });
+    } else {
+      for (const name of manifest.requiredSubgroups) {
+        if (!metrics.subgroups[name] || metrics.subgroups[name].caseCount < (manifest.minimumSubgroupCases || 30)) failed.push({ name: `Required subgroup ${name}`, evaluable: false });
+      }
+    }
     return {
       decision: failed.length ? "NO_GO" : "GO",
       checks,

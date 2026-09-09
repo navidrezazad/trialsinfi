@@ -2215,12 +2215,12 @@
     };
   }
 
-  function isTrialSourceCurrent(trial, maximumAgeDays) {
+  function isTrialSourceCurrent(trial, maximumAgeDays, asOf) {
     const raw = trial?.registryVersion || trial?.lastSyncAt || trial?.lastUpdated || "";
     const timestamp = Date.parse(raw);
     if (!Number.isFinite(timestamp)) return false;
-    const ageDays = Math.max(0, (Date.now() - timestamp) / 86400000);
-    return ageDays <= (maximumAgeDays || 7);
+    const ageDays = (Date.parse(asOf || new Date().toISOString()) - timestamp) / 86400000;
+    return ageDays >= 0 && ageDays <= (maximumAgeDays || 7);
   }
 
   function criterionCoverage(evaluations) {
@@ -2241,9 +2241,9 @@
   function enrichMatchForCohort(trial, cohort, parsedQuery, legacyMatch) {
     const patientFactSet = buildPatientFactSet(parsedQuery);
     const criteria = [].concat(cohort?.sharedCriteria || [], cohort?.cohortSpecificCriteria || []);
-    const sourceCurrent = isTrialSourceCurrent(trial, 7);
+    const sourceCurrent = isTrialSourceCurrent(trial, 7, parsedQuery.referenceTime);
     const structuredEvaluations = schemaApi?.evaluateCriterion
-      ? criteria.map(criterion => schemaApi.evaluateCriterion(criterion, patientFactSet, { trialSourceIsCurrent: sourceCurrent }))
+      ? criteria.map(criterion => schemaApi.evaluateCriterion(criterion, patientFactSet, { trialSourceIsCurrent: sourceCurrent, asOf: parsedQuery.referenceTime }))
       : [];
     if (criteria.length === 0) {
       structuredEvaluations.push({
@@ -2266,23 +2266,27 @@
       });
     }
 
-    const evaluations = structuredEvaluations.concat(legacyMatch.legacyEvaluations || []);
+    // Legacy regex interpretations are retrieval hints only. They cannot
+    // override the reviewed Boolean AST or contribute eligibility evidence.
+    const evaluations = structuredEvaluations;
+    const cohortTrial = { ...trial, diseaseSettingAllIds: cohort.diseaseConcepts || [], diseaseSettingPrimaryId: (cohort.diseaseConcepts || [])[0] || "" };
+    const diseaseRelation = (cohort.diseaseConcepts || []).length ? trialDiseaseRelation(cohortTrial, parsedQuery) : "UNKNOWN_TRIAL_DATA";
     const trialQuality = schemaApi?.calculateTrialDataQuality
-      ? schemaApi.calculateTrialDataQuality(cohort, trial)
+      ? schemaApi.calculateTrialDataQuality(cohort, trial, { trialSourceIsCurrent: sourceCurrent, asOf: parsedQuery.referenceTime })
       : { tier: "machine_extracted", criticalCriteriaModeled: 0, currentLocalCohort: false };
     let reviewTier = schemaApi?.classifyReviewTier
       ? schemaApi.classifyReviewTier({
           evaluations,
           trialQuality,
-          diseaseRelation: legacyMatch.diseaseRelation,
-          positiveDiseaseEvidence: legacyMatch.diseaseRelation === "MATCH" && Boolean(parsedQuery.diseaseLabel),
+          diseaseRelation,
+          positiveDiseaseEvidence: diseaseRelation === "MATCH" && Boolean(parsedQuery.diseaseLabel),
           hasUnconfirmedCriticalFacts: patientFactSet.facts.some(fact => canonicalToken(fact.confirmation) === "unreviewed") || patientFactSet.contradictions.length > 0
         })
       : legacyMatch.reviewTier;
-    if ((legacyMatch.potentialConflicts || []).length > 0) reviewTier = "MODELED_CONFLICT";
-    if (legacyMatch.diseaseRelation === "MISMATCH" && trialQuality.tier !== "reviewed") reviewTier = "MANUAL_REVIEW_TRIAL_DATA";
+    if (diseaseRelation === "MISMATCH") reviewTier = "DISEASE_CONTEXT_RETRIEVAL";
+    if (!["recruiting", "not_yet_recruiting", "unknown", ""].includes(canonicalToken(cohort.enrollmentStatus))) reviewTier = "DISEASE_CONTEXT_RETRIEVAL";
 
-    const flags = (legacyMatch.flags || []).slice();
+    const flags = [];
     if (reviewTier === "MANUAL_REVIEW_TRIAL_DATA") addFlag(flags, "trial_data_incomplete");
     const tierBase = {
       PRIORITY_PROTOCOL_REVIEW: 5,
@@ -2298,6 +2302,11 @@
 
     return {
       ...legacyMatch,
+      included: true,
+      diseaseRelation,
+      resolvedFacts: [],
+      potentialConflicts: [],
+      legacyHints: { evaluations: legacyMatch.legacyEvaluations || [], conflicts: legacyMatch.potentialConflicts || [], flags: legacyMatch.flags || [] },
       cohortId: cohort.cohortId,
       cohortLabel: cohort.label,
       cohort,
@@ -2311,18 +2320,18 @@
       patientVersion: patientFactSet.patientVersion,
       coverage: criterionCoverage(evaluations),
       relevance: {
-        score: Math.max(0, Math.min(1, (supportedCount + (legacyMatch.resolvedFacts || []).length) / Math.max(1, evaluations.length + 2))),
+        score: diseaseRelation === "MATCH" ? 1 : diseaseRelation === "BROAD_QUERY" ? 0.5 : 0,
         isProbability: false,
         components: {
-          disease: legacyMatch.diseaseRelation === "MATCH" ? 1 : legacyMatch.diseaseRelation === "BROAD_QUERY" ? 0.5 : 0,
+          disease: diseaseRelation === "MATCH" ? 1 : diseaseRelation === "BROAD_QUERY" ? 0.5 : 0,
           clinicalSupport: supportedCount,
           unknown: unknownCount,
           sitePreference: legacyMatch.locationScore || 0,
           physicianPreference: legacyMatch.preferenceScore || 0
         }
       },
-      reasonText: `${cohort.label}: ${legacyMatch.reasonText}`,
-      sortScore: (tierBase * 10000) + (supportedCount * 100) - (unknownCount * 10) + ((legacyMatch.preferenceScore || 0) * 2) + (legacyMatch.locationScore || 0)
+      reasonText: `${cohort.label}: ${diseaseRelation === "MATCH" ? "Disease context aligns." : "Confirm the cohort's disease context."} ${supportedCount} supported criteria; ${unknownCount} unresolved. Confirm protocol and site availability.`,
+      sortScore: (tierBase * 10000) + (diseaseRelation === "MATCH" ? 1000 : 0) + ((legacyMatch.preferenceScore || 0) * 2) + (legacyMatch.locationScore || 0)
     };
   }
 
@@ -2334,7 +2343,7 @@
       return { included: false, excludedReason: parsedQuery.unsupportedReason || "Unsupported query." };
     }
 
-    if ((trial.cancerType || "") !== parsedQuery.cancerType) {
+    if (![trial.cancerType].concat(trial.cancerTypes || []).includes(parsedQuery.cancerType) && !parsedQuery.retrievalCandidateIds?.includes(trial.nctId || trial.id)) {
       return { included: false, excludedReason: "Cancer type mismatch." };
     }
 
@@ -2380,7 +2389,7 @@
 
     trials.forEach(trial => {
       const cancerTypes = [trial?.cancerType].concat(trial?.cancerTypes || []);
-      if (!cancerTypes.includes(parsedQuery.cancerType)) {
+      if (!cancerTypes.includes(parsedQuery.cancerType) && !parsedQuery.retrievalCandidateIds?.includes(trial.nctId || trial.id)) {
         result.auditTrail.push({ trialId: trial?.nctId || trial?.id || "unknown", status: "NOT_EVALUATED", reason: "Cancer type mismatch." });
         return;
       }

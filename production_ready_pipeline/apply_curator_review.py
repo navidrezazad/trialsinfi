@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .clinical_schema import SCHEMA_VERSION, canonical_token, stable_hash
+    from .clinical_schema import SCHEMA_VERSION, canonical_token, stable_hash, source_content_hash
 except ImportError:
-    from clinical_schema import SCHEMA_VERSION, canonical_token, stable_hash  # type: ignore
+    from clinical_schema import SCHEMA_VERSION, canonical_token, stable_hash, source_content_hash  # type: ignore
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +111,7 @@ def validate_and_apply(payload: dict[str, Any], review: dict[str, Any]) -> tuple
     _require(len(matching) == 1, "review trialId must identify exactly one catalog trial")
     trial = matching[0]
     _require(trial.get("rawRecordHash") == review["trialRawRecordHash"], "trialRawRecordHash is stale or does not match")
+    _require(trial.get("sourceContentHash") == source_content_hash(trial), "actual source content changed; migrate the catalog before review")
     _require(str(trial.get("registryVersion") or "") == str(review["registryVersion"]), "registryVersion is stale or does not match")
 
     criteria = copy.deepcopy(trial.get("criteria") or [])
@@ -181,11 +182,19 @@ def validate_and_apply(payload: dict[str, Any], review: dict[str, Any]) -> tuple
         _require(not (set(shared_ids) & set(specific_ids)), f"shared and cohort-specific criteria overlap for {cohort_id}")
         unknown_ids = (set(shared_ids) | set(specific_ids)) - set(criteria_by_id)
         _require(not unknown_ids, f"unknown criterionIds for {cohort_id}: {sorted(unknown_ids)}")
+        _require(len(shared_ids) == len(set(shared_ids)) and len(specific_ids) == len(set(specific_ids)), "duplicate criterion assignment")
+        dispositions = spec.get("inapplicableCriteria") or []
+        _require(all(isinstance(item, dict) and item.get("criterionId") in criteria_by_id and str(item.get("rationale") or "").strip() for item in dispositions), "inapplicable criteria require a known ID and rationale")
+        inapplicable_ids = {item["criterionId"] for item in dispositions}
+        _require(not (inapplicable_ids & (set(shared_ids) | set(specific_ids))), "inapplicable and evaluated criteria overlap")
+        _require(set(shared_ids) | set(specific_ids) | inapplicable_ids == set(criteria_by_id), f"every source criterion must be assigned or explicitly inapplicable for {cohort_id}")
         source_span = _validate_source_span(trial, spec.get("sourceSpan"), f"cohort {cohort_id}")
         cohorts.append({
             "schemaVersion": SCHEMA_VERSION,
             "cohortId": cohort_id,
             "label": label,
+            "inapplicableCriteria": copy.deepcopy(dispositions),
+            "inapplicableCriterionIds": sorted(inapplicable_ids),
             "armIds": [str(value) for value in spec.get("armIds") or []],
             "enrollmentStatus": str(spec.get("enrollmentStatus") or trial.get("status") or "unknown"),
             "statusProvenance": {

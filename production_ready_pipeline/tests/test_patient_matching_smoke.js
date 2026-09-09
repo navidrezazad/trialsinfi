@@ -42,7 +42,8 @@ function flagCodes(entry) {
     'disease_setting_review',
     'phase_preference'
   ]);
-  return (entry?.match?.flags || [])
+  // This suite preserves the old heuristic diagnostics, not public authority.
+  return (entry?.match?.legacyHints?.flags || [])
     .map(flag => flag.code)
     .filter(code => !administrative.has(code))
     .sort();
@@ -817,9 +818,10 @@ function testProstate() {
     PatientQueryParser.parse('mCRPC. Progressed on enzalutamide.')
   );
   assert.equal(degradedLocalizedResult.included, true, 'Potential conflicts must remain visible for audit.');
-  assert.equal(degradedLocalizedResult.reviewTier, 'MODELED_CONFLICT');
+  assert.notEqual(degradedLocalizedResult.reviewTier, 'MODELED_CONFLICT', 'Legacy staging hints do not establish modeled conflicts.');
   assert.equal(degradedLocalizedResult.hardExcluded, false, 'Unreviewed legacy rules may not authorize hard exclusion.');
-  assert.deepEqual(degradedLocalizedResult.potentialConflicts, ['staging']);
+  assert.deepEqual(degradedLocalizedResult.legacyHints.conflicts, ['staging']);
+  assert.deepEqual(degradedLocalizedResult.potentialConflicts, []);
 }
 
 function testBladder() {

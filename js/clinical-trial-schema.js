@@ -107,6 +107,7 @@
       value: typeof options?.value === "string" ? normalizeAxisValue(conceptId, options.value) : (options?.value ?? true),
       unit: options?.unit || null,
       observedAt: options?.observedAt || null,
+      validAt: options?.validAt || null,
       normalization: options?.normalization || null,
       assertion: normalizeEnum(options?.assertion || "present"),
       status: normalizeEnum(options?.status || "current"),
@@ -127,7 +128,10 @@
     return [
       fact?.concept?.code || fact?.conceptId || "",
       fact?.predicate || "",
-      fact?.status || "",
+      // Event identity belongs in the proposition; different drugs are not
+      // mutually exclusive scalar values. Measurements retain specimen/time.
+      ["systemic_therapy", "treatment_exposure"].includes(normalizeEnum(fact?.concept?.code)) ? fact?.value : "",
+      fact?.observedAt || fact?.temporality?.eventTime || "",
       fact?.experiencer || "patient"
     ].map(normalizeEnum).join("|");
   }
@@ -167,6 +171,7 @@
   }
 
   function compareValues(actual, operator, expected) {
+    if (actual == null || expected == null || actual === '' || expected === '') return null;
     const op = normalizeEnum(operator || "eq").toUpperCase();
     const actualCanonical = typeof actual === "string" ? normalizeEnum(actual) : actual;
     const expectedCanonical = typeof expected === "string" ? normalizeEnum(expected) : expected;
@@ -186,19 +191,19 @@
 
   function criterionResult(status, details) {
     return {
-      status,
       unknownReason: null,
       patientFactIds: [],
       reason: "",
       question: "",
-      ...(details || {})
+      ...(details || {}),
+      status
     };
   }
 
   function combineAnd(results) {
     if (results.some(result => result.status === CRITERION_STATES.VIOLATED)) {
       return criterionResult(CRITERION_STATES.VIOLATED, {
-        patientFactIds: results.flatMap(result => result.patientFactIds || []),
+        patientFactIds: results.filter(result => result.status === CRITERION_STATES.VIOLATED).flatMap(result => result.patientFactIds || []),
         reason: "At least one required branch is violated."
       });
     }
@@ -226,7 +231,7 @@
     const satisfied = results.find(result => result.status === CRITERION_STATES.SATISFIED);
     if (satisfied) return satisfied;
     if (results.every(result => result.status === CRITERION_STATES.VIOLATED)) {
-      return criterionResult(CRITERION_STATES.VIOLATED, { reason: "Every permitted branch is violated." });
+      return criterionResult(CRITERION_STATES.VIOLATED, { patientFactIds: results.flatMap(result => result.patientFactIds || []), reason: "Every permitted branch is violated." });
     }
     if (results.some(result => result.status === CRITERION_STATES.UNKNOWN)) {
       const unknown = results.find(result => result.status === CRITERION_STATES.UNKNOWN);
@@ -242,7 +247,7 @@
     });
   }
 
-  function evaluateLeaf(expression, facts, contradictions) {
+  function evaluateLeaf(expression, facts, contradictions, context = {}) {
     const concept = normalizeEnum(expression?.concept || expression?.conceptId || "");
     const predicate = normalizeEnum(expression?.predicate || "has");
     if (!concept) {
@@ -251,12 +256,45 @@
         reason: "Criterion has no normalized concept."
       });
     }
-    const candidates = facts.filter(fact =>
+    let candidates = facts.filter(fact =>
       normalizeEnum(fact?.confirmation) !== "rejected" &&
       normalizeEnum(fact?.experiencer || "patient") === "patient" &&
       normalizeEnum(fact?.concept?.code || fact?.conceptId) === concept &&
       normalizeEnum(fact?.predicate || "has") === predicate
     );
+    const eventQuery = ["systemic_therapy", "treatment_exposure"].includes(concept) || expression.op === "EVENT_EXISTS";
+    if (eventQuery) {
+      if (!['EQ'].includes(String(expression.operator || 'EQ').toUpperCase()) || typeof expression.value !== 'string') {
+        return criterionResult(CRITERION_STATES.NOT_MODELED, { reason: 'Event queries require an explicit event identity and equality; set and negative event logic require reviewed Boolean branches.' });
+      }
+      candidates = candidates.filter(fact => normalizeEnum(fact.value) === normalizeEnum(expression.value));
+    }
+    // Proposed/planned events and historical disease assertions cannot establish
+    // current truth. A planned negative also cannot prove absence of exposure.
+    candidates = candidates.filter(fact => !["planned", "unknown"].includes(normalizeEnum(fact.status)));
+    const isMeasurement = Boolean(expression.unit) || concept === "ecog_status";
+    if (isMeasurement && candidates.some(isFactConfirmed)) {
+      const asOf = Date.parse(context.asOf || new Date().toISOString());
+      const windowDays = expression.maxAgeDays ?? context.measurementMaxAgeDays ?? 30;
+      const dated = candidates.filter(fact => {
+        const age = (asOf - Date.parse(fact.observedAt || "")) / 86400000;
+        return Number.isFinite(age) && age >= 0 && age <= windowDays;
+      });
+      if (!dated.length) return criterionResult(CRITERION_STATES.UNKNOWN, {
+        unknownReason: UNKNOWN_REASONS.PATIENT_FACT_STALE,
+        reason: "A current dated observation is required; historical or undated values cannot establish this criterion.",
+        question: `Confirm ${expression.label || concept} and its collection date.`,
+        patientFactIds: candidates.map(fact => fact.factId)
+      });
+      const latest = Math.max(...dated.map(fact => Date.parse(fact.observedAt)));
+      candidates = dated.filter(fact => Date.parse(fact.observedAt) === latest);
+      if (new Set(candidates.map(fact => JSON.stringify([fact.value, fact.unit, fact.assertion]))).size > 1) {
+        return criterionResult(CRITERION_STATES.UNKNOWN, { unknownReason: UNKNOWN_REASONS.PATIENT_FACT_CONTRADICTORY, reason: "Current observations disagree; reconcile specimen and value.", patientFactIds: candidates.map(fact => fact.factId) });
+      }
+    }
+    if (concept.startsWith("since_last_")) {
+      candidates = candidates.filter(fact => fact.validAt && String(fact.validAt).slice(0, 10) === String(context.asOf || new Date().toISOString()).slice(0, 10));
+    }
     if (candidates.length === 0) {
       return criterionResult(CRITERION_STATES.UNKNOWN, {
         unknownReason: expression?.unknownReason || UNKNOWN_REASONS.PATIENT_FACT_MISSING,
@@ -316,7 +354,7 @@
       const comparisons = matchingAssertion.map(fact => compareValues(fact.value, expression.operator || "EQ", expression.value));
       if (comparisons.some(value => value === true)) {
         return criterionResult(CRITERION_STATES.SATISFIED, {
-          patientFactIds: matchingAssertion.map(fact => fact.factId),
+          patientFactIds: matchingAssertion.filter((fact, index) => comparisons[index] === true).map(fact => fact.factId),
           reason: "Confirmed patient value satisfies the normalized predicate."
         });
       }
@@ -338,7 +376,7 @@
     });
   }
 
-  function evaluateExpression(expression, facts, contradictions) {
+  function evaluateExpression(expression, facts, contradictions, context = {}) {
     if (!expression || expression.modeledStatus === "not_modeled" || expression.op === "NOT_MODELED") {
       return criterionResult(CRITERION_STATES.NOT_MODELED, {
         unknownReason: UNKNOWN_REASONS.CRITERION_NOT_REPRESENTABLE,
@@ -347,26 +385,28 @@
     }
     const op = normalizeEnum(expression.op || "FACT").toUpperCase();
     const args = Array.isArray(expression.args) ? expression.args : expression.arg ? [expression.arg] : [];
-    if (["AND", "ALL_OF"].includes(op)) return combineAnd(args.map(arg => evaluateExpression(arg, facts, contradictions)));
-    if (["OR", "ANY_OF"].includes(op)) return combineOr(args.map(arg => evaluateExpression(arg, facts, contradictions)));
+    if (!["FACT", "EVENT_EXISTS", "AND", "ALL_OF", "OR", "ANY_OF", "NONE_OF", "NOT"].includes(op) || (["AND", "ALL_OF", "OR", "ANY_OF", "NONE_OF", "NOT"].includes(op) && !args.length) || (op === "NOT" && args.length !== 1)) return criterionResult(CRITERION_STATES.NOT_MODELED, { reason: "Unsupported or empty predicate." });
+    if (["AND", "ALL_OF"].includes(op)) return combineAnd(args.map(arg => evaluateExpression(arg, facts, contradictions, context)));
+    if (["OR", "ANY_OF"].includes(op)) return combineOr(args.map(arg => evaluateExpression(arg, facts, contradictions, context)));
     if (op === "NONE_OF") {
-      const result = combineOr(args.map(arg => evaluateExpression(arg, facts, contradictions)));
+      const result = combineOr(args.map(arg => evaluateExpression(arg, facts, contradictions, context)));
       if (result.status === CRITERION_STATES.SATISFIED) return criterionResult(CRITERION_STATES.VIOLATED, result);
       if (result.status === CRITERION_STATES.VIOLATED) return criterionResult(CRITERION_STATES.SATISFIED, result);
       return result;
     }
     if (op === "NOT") {
-      const result = evaluateExpression(args[0], facts, contradictions);
+      const result = evaluateExpression(args[0], facts, contradictions, context);
       if (result.status === CRITERION_STATES.SATISFIED) return { ...result, status: CRITERION_STATES.VIOLATED };
       if (result.status === CRITERION_STATES.VIOLATED) return { ...result, status: CRITERION_STATES.SATISFIED };
       return result;
     }
-    return evaluateLeaf(expression, facts, contradictions);
+    return evaluateLeaf(expression, facts, contradictions, context);
   }
 
   function mayHardExclude(evaluation) {
     const criterion = evaluation?.criterion || {};
     return Boolean(
+      evaluation?.automatedExclusionValidated === true &&
       evaluation?.status === CRITERION_STATES.VIOLATED &&
       criterion.criticality === "hard" &&
       criterion.reviewStatus === "clinician_reviewed" &&
@@ -389,9 +429,9 @@
     const contradictions = Array.isArray(patientFactSet?.contradictions)
       ? patientFactSet.contradictions
       : detectContradictions(facts);
-    const result = normalizeEnum(criterion?.modeledStatus) === "not_modeled"
+    const result = normalizeEnum(criterion?.modeledStatus) !== "modeled"
       ? evaluateExpression({ op: "NOT_MODELED" }, facts, contradictions)
-      : evaluateExpression(criterion?.predicate, facts, contradictions);
+      : evaluateExpression(criterion?.predicate, facts, contradictions, context);
     const referencedFacts = facts.filter(fact => (result.patientFactIds || []).includes(fact.factId));
     const evaluation = {
       criterionId: criterion?.criterionId || "unknown",
@@ -405,7 +445,7 @@
     return evaluation;
   }
 
-  function calculateTrialDataQuality(cohort, trial) {
+  function calculateTrialDataQuality(cohort, trial, context = {}) {
     const criteria = [].concat(cohort?.sharedCriteria || [], cohort?.cohortSpecificCriteria || []);
     const critical = criteria.filter(criterion => criterion.criticality === "hard");
     const modeledCritical = critical.filter(criterion => criterion.modeledStatus === "modeled");
@@ -414,14 +454,17 @@
     const siteStatusCurrent = Boolean(sites.some(site => {
       const status = normalizeEnum(site.locationStatus || site.status || "unknown");
       const verifiedAt = Date.parse(site.sourceVerifiedDate || site.verifiedAt || "");
-      const fresh = Number.isFinite(verifiedAt) && ((Date.now() - verifiedAt) / 86400000) <= 14;
+      const age = (Date.parse(context.asOf || new Date().toISOString()) - verifiedAt) / 86400000;
+      const fresh = Number.isFinite(age) && age >= 0 && age <= 14;
       // Only a recently verified recruiting site can support the priority
       // protocol-review queue. Active-not-recruiting and not-yet-recruiting
       // records remain retrievable, but do not imply that a patient can enroll.
-      return status === "recruiting" && site.statusStale !== true && fresh;
+      return status === "recruiting" && site.statusStale !== true && fresh && (site.cohortIds || []).includes(cohort.cohortId);
     }));
     const cohortReviewed = Boolean(cohort?.cohortExtraction?.reviewedBy);
-    const criticalCriteriaComplete = critical.length > 0 && modeledCritical.length === critical.length && reviewedCritical.length === critical.length;
+    const assigned = new Set(criteria.map(item => item.criterionId));
+    const sourceAccounted = (trial?.criteria || []).every(item => assigned.has(item.criterionId) || (cohort?.inapplicableCriterionIds || []).includes(item.criterionId));
+    const criticalCriteriaComplete = sourceAccounted && critical.length > 0 && modeledCritical.length === critical.length && reviewedCritical.length === critical.length;
     return {
       tier: cohortReviewed && criticalCriteriaComplete ? "reviewed" : cohortReviewed ? "partially_reviewed" : "machine_extracted",
       cohortReviewed,
@@ -429,7 +472,7 @@
       criticalCriteriaModeled: critical.length ? modeledCritical.length / critical.length : 0,
       criticalCriteriaReviewed: critical.length ? reviewedCritical.length / critical.length : 0,
       criticalCriterionCount: critical.length,
-      currentLocalCohort: siteStatusCurrent,
+      currentLocalCohort: siteStatusCurrent && normalizeEnum(cohort?.enrollmentStatus) === "recruiting" && context.trialSourceIsCurrent === true,
       siteStatusCurrent,
       registrySnapshot: trial?.registryVersion || trial?.lastSyncAt || null,
       rawRecordHash: trial?.rawRecordHash || null
