@@ -28,6 +28,11 @@ def main():
     assert trial['sourceContentHash'] == source_content_hash(trial)
     again = migrate_catalog(migrated)
     assert again['trials'][0]['sourceContentHash'] == trial['sourceContentHash']
+    legacy_sites = copy.deepcopy(catalog)
+    legacy_sites['trials'][0]['sites'] = [{'locationStatus': 'recruiting', 'statusSource': 'ClinicalTrials.gov'}]
+    assert migrate_catalog(legacy_sites)['trials'][0]['sites'][0]['locationStatus'] == 'unknown'
+    legacy_sites['trials'][0]['sites'][0]['statusSource'] = 'registry_location.status'
+    assert migrate_catalog(legacy_sites)['trials'][0]['sites'][0]['locationStatus'] == 'recruiting'
     # A reviewed closed cohort cannot inherit the parent's recruiting state.
     cohort = trial['cohorts'][0]
     cohort['cohortExtraction']['reviewedBy'] = 'test-reviewer'

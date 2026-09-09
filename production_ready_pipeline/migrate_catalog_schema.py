@@ -101,9 +101,10 @@ def _site_records(trial: dict[str, Any], ingested_at: str) -> list[dict[str, Any
     sites: list[dict[str, Any]] = []
     for source in trial.get("sites") or []:
         site = copy.deepcopy(source)
-        explicit_status = site.get("locationStatus") or site.get("status")
+        trusted_source = site.get("statusSource") in {"registry_location.status", "manual_verified"}
+        explicit_status = (site.get("locationStatus") or site.get("status")) if trusted_source else None
         site["locationStatus"] = str(explicit_status or "unknown").strip().lower().replace(" ", "_")
-        site["statusSource"] = "registry_location" if explicit_status else "not_available"
+        site["statusSource"] = site.get("statusSource") if explicit_status else "not_available"
         site["sourceVerifiedDate"] = site.get("sourceVerifiedDate") or site.get("verifiedAt")
         site["ingestedAt"] = site.get("ingestedAt") or ingested_at
         site["manualStatus"] = site.get("manualStatus")

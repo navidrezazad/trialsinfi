@@ -192,6 +192,7 @@ def parse_study_extended(
             "Trial title": title,
             "Phase": phase,
             "Status": location.get("status", "UNKNOWN"),
+            "Status source": "registry_location.status",
             "Cancer type": cancer_type_str,
             "Institution": institution,
             "PI name": pi_name,
